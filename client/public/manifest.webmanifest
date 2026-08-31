@@ -1,0 +1,18 @@
+{
+  "name": "Black Wake — Operation 07.14N",
+  "short_name": "Black Wake",
+  "description": "An operational nautical thriller of escape and survival.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#041018",
+  "theme_color": "#041018",
+  "icons": [
+    {
+      "src": "/manus-storage/marea-nera-logo-v2_32012a38.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

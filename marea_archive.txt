@@ -1,0 +1,19 @@
+Archive:  /home/ubuntu/upload/MAREA-NERA-completo.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  2026-08-27 21:25   MAREA-NERA/
+    11086  2026-08-27 21:30   MAREA-NERA/DOCUMENTO-DESIGN-MAREA-NERA.txt
+     1882  2026-08-27 21:30   MAREA-NERA/README.md
+        0  2026-08-27 21:25   MAREA-NERA/assets/
+        0  2026-08-27 21:25   MAREA-NERA/css/
+     6453  2026-08-27 21:26   MAREA-NERA/css/style.css
+     1753  2026-08-27 21:25   MAREA-NERA/index.html
+        0  2026-08-27 21:25   MAREA-NERA/js/
+     1781  2026-08-27 21:27   MAREA-NERA/js/audio.js
+     8044  2026-08-27 21:26   MAREA-NERA/js/data.js
+    21287  2026-08-27 21:29   MAREA-NERA/js/engine.js
+     4998  2026-08-27 21:30   MAREA-NERA/js/main.js
+      713  2026-08-27 21:27   MAREA-NERA/js/save.js
+     9122  2026-08-27 21:29   MAREA-NERA/js/ui.js
+---------                     -------
+    67119                     14 files

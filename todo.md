@@ -1,0 +1,33 @@
+# Controllo qualità Black Wake (Marea Nera)
+
+- [x] Abilitare File Storage e caricare le tre tracce per cache offline Android dopo il primo download.
+- [ ] Collaudare fisicamente su Android la riproduzione musicale senza rete dopo il primo download.
+- [x] Aggiungere slider indipendenti per musica ed effetti sonori, con persistenza delle preferenze.
+- [x] Correggere i livelli audio iniziali affinché musica ed effetti non partano silenziosi senza preferenze salvate.
+- [x] Creare trailer ufficiale e set aggiornato di screenshot promozionali.
+- [ ] Preparare un unico ZIP con progetto, media e materiali Play Store.
+- [x] Rimuovere le copie Android duplicate delle tre tracce, mantenendo gli asset pubblicati per la riproduzione online.
+- [x] Definire e produrre una colonna sonora originale in tre stati: navigazione, inseguimento e trasmissione finale.
+- [x] Integrare la musica con transizioni, mute e mix che rispettino gli effetti e la radio.
+- [x] Verificare audio, build, Android e creare lo ZIP aggiornato della release musicale.
+- [x] Integrare e rendere giocabili i capitoli della campagna dal 2 all'8.
+- [x] Aggiungere audio runtime e radio dinamica, con attivazione audio dopo gesto utente.
+- [x] Rafforzare il tema con segnali di minaccia, allarmi, contrasto e motion più aggressivi.
+- [x] Rendere testabili in modo controllato tutti i capitoli della campagna tramite query di simulazione.
+- [x] Rendere verificabile l'escalation d'allarme senza forzare condizioni durante una partita normale.
+- [x] Scrivere la scheda Google Play e predisporre le schermate promozionali necessarie.
+- [x] Eseguire una nuova revisione ricorsiva con almeno 100 controlli aggiornati.
+- [x] Creare un nuovo ZIP completo della release espansa.
+- [ ] Completare il gioco giocabile: menu, briefing, missione, pausa, debrief e officina.
+- [x] Integrare soltanto gli asset aggiuntivi che migliorano davvero leggibilità di ostacoli, rotte, pickup e pressione portuale.
+- [x] Predisporre la build touch per orientamento orizzontale e configurazione Android per Google Play.
+- [x] Generare e sincronizzare il contenitore Android nativo con orientamento landscape bloccato.
+- [x] Eseguire i 100 controlli tematici della revisione: architettura, input, stato, simulazione, collisioni, UI, mobile, accessibilità, asset, build e log runtime.
+- [x] Correggere la soglia responsive dei controlli touch su Android in orizzontale.
+- [x] Correggere il timer a delta time dell'invulnerabilità successiva a un impatto.
+- [x] Consolidare la direzione Cartografia d'Emergenza con rotta, topografia, radar e marchio come elementi dominanti.
+- [x] Correggere tutti i difetti riproducibili emersi e rieseguire i controlli pertinenti.
+- [x] Verificare visivamente menu, corsa automatica e comportamento mobile; briefing, officina e debrief condividono gli stessi componenti di stato verificati dalla suite.
+- [x] Eseguire i controlli di tipo e la build di produzione finale senza errori.
+- [ ] Salvare il checkpoint della versione completata.
+- [x] Creare e allegare lo ZIP completo, escludendo dipendenze e artefatti temporanei e includendo gli asset generati disponibili.

@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Black Wake</string>
-    <string name="title_activity_main">Black Wake</string>
-    <string name="package_name">com.blackwake.game</string>
-    <string name="custom_url_scheme">com.blackwake.game</string>
-</resources>

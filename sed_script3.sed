@@ -1,0 +1,5 @@
+/awaitPointerEventScope/,/}/ {
+  /awaitPointerEventScope/! {
+    /}/!d
+  }
+}

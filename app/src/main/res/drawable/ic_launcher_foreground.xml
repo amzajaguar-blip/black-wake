@@ -4,7 +4,33 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Hull seen from astern, cutting towards the horizon. -->
     <path
         android:fillColor="#2BE7E0"
-        android:pathData="M34,60l20,-30l20,30h-40z" />
+        android:pathData="M54,26 L62,58 L58,70 L50,70 L46,58 Z" />
+    <!-- The wake: two spreading arms. -->
+    <path
+        android:strokeColor="#2BE7E0"
+        android:strokeWidth="3.5"
+        android:strokeAlpha="0.85"
+        android:strokeLineCap="round"
+        android:pathData="M48,70 L30,90" />
+    <path
+        android:strokeColor="#2BE7E0"
+        android:strokeWidth="3.5"
+        android:strokeAlpha="0.85"
+        android:strokeLineCap="round"
+        android:pathData="M60,70 L78,90" />
+    <path
+        android:strokeColor="#FFB45F"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.7"
+        android:strokeLineCap="round"
+        android:pathData="M40,84 L22,84" />
+    <path
+        android:strokeColor="#FFB45F"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.7"
+        android:strokeLineCap="round"
+        android:pathData="M68,84 L86,84" />
 </vector>

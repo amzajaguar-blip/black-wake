@@ -323,13 +323,17 @@ fun DrawScope.drawSea(
             if (gy <= horizonY + hazeBand * 0.35f || gy >= h) continue
             val drift = ((run.runElapsed * 0.17f + i * 0.137f) % 1f) * 2f - 1f
             val gx = w / 2f + drift * w * 0.62f
-            val len = (5f + 12f * gs) * u
+            // Length and tilt vary per glint. Uniform horizontal dashes of equal length read as
+            // scratches on the screen rather than as light sitting on a moving surface.
+            val vary = sin(fi * 3.1f) * 0.5f + 0.5f
+            val len = (2.5f + 7f * gs) * (0.5f + vary) * u
+            val tilt = sin(fi * 1.7f) * 2.2f * u * gs
             val twinkle = sin(run.runElapsed * 2.3f + fi) * 0.5f + 0.5f
             drawLine(
-                Color.White.copy(alpha = (0.07f + 0.09f * gs * twinkle) * (1f - dread * 0.6f)),
-                Offset(gx - len, gy),
-                Offset(gx + len, gy),
-                strokeWidth = 1.4f * u
+                Color.White.copy(alpha = (0.05f + 0.07f * gs * twinkle) * (1f - dread * 0.6f)),
+                Offset(gx - len, gy - tilt),
+                Offset(gx + len, gy + tilt),
+                strokeWidth = 1.2f * u
             )
         }
 
@@ -688,14 +692,19 @@ private fun DrawScope.drawPlayer(run: RunState, boat: BoatSpec, cx: Float, cy: F
                 size = Size(52f * u, 88f * u)
             )
 
-            // Bow wave: the water pushed aside ahead of the stem.
+            // Bow wave: two short crests peeling back from the stem along the hull. Drawn as arcs
+            // that start at the stem and sweep aft, never ahead of it — a full ellipse centred on
+            // the bow reads as a ring floating over the boat, not as displaced water.
             if (!submerged) {
-                drawOval(
-                    Color.White.copy(alpha = 0.16f),
-                    topLeft = Offset(-17f * u, -50f * u),
-                    size = Size(34f * u, 26f * u),
-                    style = Stroke(2f * u)
-                )
+                val foam = fx.path2
+                foam.reset()
+                foam.moveTo(-1.5f * u, -41f * u)
+                foam.quadraticTo(-12f * u, -34f * u, -17f * u, -16f * u)
+                drawPath(foam, Color.White.copy(alpha = 0.30f), style = Stroke(2.2f * u))
+                foam.reset()
+                foam.moveTo(1.5f * u, -41f * u)
+                foam.quadraticTo(12f * u, -34f * u, 17f * u, -16f * u)
+                drawPath(foam, Color.White.copy(alpha = 0.30f), style = Stroke(2.2f * u))
             }
 
             // HULL.
@@ -716,13 +725,16 @@ private fun DrawScope.drawPlayer(run: RunState, boat: BoatSpec, cx: Float, cy: F
                 drawPath(hull, Color.Black.copy(alpha = 0.22f * abs(lee) * alpha))
             }
 
-            // DETAILS — deck inset, then the superstructure on top of it.
+            // DETAILS — deck inset, then the superstructure on top of it. The deck has to be
+            // clearly lighter than the hull: a dark cabin on a dark hull on dark water collapses
+            // into one blob on a phone, which is what the first pass of this did.
             playerHull(hull, u, 0.70f)
-            drawPath(hull, Color.White.copy(alpha = 0.07f * alpha))
+            drawPath(hull, Color.White.copy(alpha = 0.15f * alpha))
 
-            // STRUCTURE — cabin block with a lit top edge.
+            // STRUCTURE — cabin block, lighter than the hull so the boat has internal contrast,
+            // with a lit top edge.
             drawRoundRect(
-                Color(0xFF0A1A20).copy(alpha = alpha),
+                Color(0xFF2E5260).copy(alpha = alpha),
                 topLeft = Offset(-9.5f * u, -15f * u),
                 size = Size(19f * u, 24f * u),
                 cornerRadius = CornerRadius(3f * u)
@@ -785,7 +797,7 @@ private fun DrawScope.drawPlayer(run: RunState, boat: BoatSpec, cx: Float, cy: F
 
 /** How many swell lines and water glints the sea carries. Kept here so the cost is one edit. */
 private const val SWELL_LINES = 14
-private const val GLINTS = 12
+private const val GLINTS = 9
 
 /**
  * Snaps a 0..1 driver onto [steps] levels. Anything that ends up baked into a cached gradient goes

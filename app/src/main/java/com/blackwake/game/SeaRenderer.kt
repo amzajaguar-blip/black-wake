@@ -51,6 +51,137 @@ class SeaEffects {
     val rain = FloatArray(RAIN_DROPS * 3)
     val spray = FloatArray(SPRAY_PARTICLES * 5)
     val path = Path()
+
+    /** Second path so a hull can be built while a wake path is still in hand. */
+    val path2 = Path()
+
+    // --- Gradient cache.
+    //
+    // Brush.verticalGradient/radialGradient allocate, and the sea, the fog, the flare wash, the
+    // submerged veil and the damage vignette were each building one on every single frame. They
+    // only actually change when their colours or geometry change, so each one is kept until its
+    // own inputs move. The colour drivers are quantised by the caller (see [quantize]) so a
+    // continuously rising detection level rebuilds a gradient a couple of dozen times over a run
+    // instead of sixty times a second.
+
+    private var skySize = 0f
+    private var skyTop = Color.Transparent
+    private var skyBottom = Color.Transparent
+    private var skyCache: Brush? = null
+
+    private var seaTop = 0f
+    private var seaBottom = 0f
+    private var seaFarColor = Color.Transparent
+    private var seaNearColor = Color.Transparent
+    private var seaCache: Brush? = null
+
+    private var fogAlpha = -1f
+    private var fogTop = 0f
+    private var fogEnd = 0f
+    private var fogCache: Brush? = null
+
+    private var flareAlpha = -1f
+    private var flareRadius = 0f
+    private var flareCx = 0f
+    private var flareCy = 0f
+    private var flareCache: Brush? = null
+
+    private var veilAlpha = -1f
+    private var veilEnd = 0f
+    private var veilCache: Brush? = null
+
+    private var vignetteAlpha = -1f
+    private var vignetteRadius = 0f
+    private var vignetteCx = 0f
+    private var vignetteCy = 0f
+    private var vignetteCache: Brush? = null
+
+    private var hazeTop = 0f
+    private var hazeBottom = 0f
+    private var hazeColor = Color.Transparent
+    private var hazeCache: Brush? = null
+
+    fun sky(endY: Float, top: Color, bottom: Color): Brush {
+        val cached = skyCache
+        if (cached != null && skySize == endY && skyTop == top && skyBottom == bottom) return cached
+        skySize = endY
+        skyTop = top
+        skyBottom = bottom
+        return Brush.verticalGradient(listOf(top, bottom), startY = 0f, endY = endY).also { skyCache = it }
+    }
+
+    fun sea(startY: Float, endY: Float, far: Color, near: Color): Brush {
+        val cached = seaCache
+        if (cached != null && seaTop == startY && seaBottom == endY && seaFarColor == far && seaNearColor == near) return cached
+        seaTop = startY
+        seaBottom = endY
+        seaFarColor = far
+        seaNearColor = near
+        return Brush.verticalGradient(listOf(far, near), startY = startY, endY = endY).also { seaCache = it }
+    }
+
+    /** Light sitting on the horizon: the single cheapest thing that reads as atmosphere. */
+    fun haze(startY: Float, endY: Float, color: Color): Brush {
+        val cached = hazeCache
+        if (cached != null && hazeTop == startY && hazeBottom == endY && hazeColor == color) return cached
+        hazeTop = startY
+        hazeBottom = endY
+        hazeColor = color
+        return Brush.verticalGradient(listOf(color, Color.Transparent), startY = startY, endY = endY).also { hazeCache = it }
+    }
+
+    fun fog(alpha: Float, startY: Float, endY: Float): Brush {
+        val cached = fogCache
+        if (cached != null && fogAlpha == alpha && fogTop == startY && fogEnd == endY) return cached
+        fogAlpha = alpha
+        fogTop = startY
+        fogEnd = endY
+        return Brush.verticalGradient(
+            listOf(Palette.Deep.copy(alpha = 0.95f * alpha), Palette.Deep.copy(alpha = 0.85f * alpha), Color.Transparent),
+            startY = startY,
+            endY = endY
+        ).also { fogCache = it }
+    }
+
+    fun flareWash(alpha: Float, cx: Float, cy: Float, radius: Float): Brush {
+        val cached = flareCache
+        if (cached != null && flareAlpha == alpha && flareCx == cx && flareCy == cy && flareRadius == radius) return cached
+        flareAlpha = alpha
+        flareCx = cx
+        flareCy = cy
+        flareRadius = radius
+        return Brush.radialGradient(
+            listOf(Color(0x66FFE2A0).copy(alpha = alpha), Color.Transparent),
+            center = Offset(cx, cy),
+            radius = radius
+        ).also { flareCache = it }
+    }
+
+    fun submergeVeil(alpha: Float, endY: Float): Brush {
+        val cached = veilCache
+        if (cached != null && veilAlpha == alpha && veilEnd == endY) return cached
+        veilAlpha = alpha
+        veilEnd = endY
+        return Brush.verticalGradient(
+            listOf(Color(0xFF020A10).copy(alpha = alpha), Color.Transparent),
+            endY = endY
+        ).also { veilCache = it }
+    }
+
+    fun damageVignette(alpha: Float, cx: Float, cy: Float, radius: Float): Brush {
+        val cached = vignetteCache
+        if (cached != null && vignetteAlpha == alpha && vignetteCx == cx && vignetteCy == cy && vignetteRadius == radius) return cached
+        vignetteAlpha = alpha
+        vignetteCx = cx
+        vignetteCy = cy
+        vignetteRadius = radius
+        return Brush.radialGradient(
+            listOf(Color.Transparent, Color.Transparent, Palette.Red.copy(alpha = alpha)),
+            center = Offset(cx, cy),
+            radius = radius
+        ).also { vignetteCache = it }
+    }
+
     private var sprayCursor = 0
     private var lastElapsed = -1f
     private var seed = 0x1234567
@@ -124,13 +255,29 @@ fun DrawScope.drawSea(
     fun screenX(x: Float, s: Float) = w / 2f + x * (far + (near - far) * s)
     fun depth(z: Float) = 1f - z / 100f
 
-    val tension = (run.detection / 0.75f).coerceIn(0f, 1f)
-    val dread = ((run.detection - 0.75f) / 0.25f).coerceIn(0f, 1f)
+    // The raw flare drives the light that must stay smooth; the quantised copies drive anything
+    // that ends up baked into a cached gradient, so the cache is not thrown away every frame.
     val flare = (run.flare.timer / GameSimulation.FLARE_SECONDS).coerceIn(0f, 1f)
-    fun tint(c: Color) = lerp(lerp(lerp(c, Palette.Storm, tension * 0.6f), Palette.BlackTide, dread * 0.7f), Color(0xFF553311), flare * 0.45f)
+    val tension = quantize((run.detection / 0.75f).coerceIn(0f, 1f))
+    val dread = quantize(((run.detection - 0.75f) / 0.25f).coerceIn(0f, 1f))
+    val flareTint = quantize(flare)
+    fun tint(c: Color) = lerp(lerp(lerp(c, Palette.Storm, tension * 0.6f), Palette.BlackTide, dread * 0.7f), Color(0xFF553311), flareTint * 0.45f)
 
-    drawRect(Brush.verticalGradient(listOf(palette.sky, tint(palette.horizon)), startY = 0f, endY = horizonY), size = Size(w, horizonY + 1f))
-    drawRect(Brush.verticalGradient(listOf(tint(palette.seaFar), tint(palette.seaNear)), startY = horizonY, endY = h), topLeft = Offset(0f, horizonY), size = Size(w, h - horizonY))
+    val seaFar = tint(palette.seaFar)
+    val seaNear = tint(palette.seaNear)
+    val horizonTint = tint(palette.horizon)
+
+    drawRect(fx.sky(horizonY, palette.sky, horizonTint), size = Size(w, horizonY + 1f))
+    drawRect(fx.sea(horizonY, h, seaFar, seaNear), topLeft = Offset(0f, horizonY), size = Size(w, h - horizonY))
+
+    // Haze: the horizon glows and the glow falls off into the near water. Reads as air and
+    // distance, and gives the far boats something to be silhouetted against.
+    val hazeBand = (h - horizonY) * 0.22f
+    drawRect(
+        fx.haze(horizonY, horizonY + hazeBand, horizonTint.copy(alpha = 0.55f)),
+        topLeft = Offset(0f, horizonY),
+        size = Size(w, hazeBand)
+    )
 
     val shake = run.cameraShake + (if (run.detection > 0.85f) (run.detection - 0.85f) * 4f else 0f) + (if (run.dive.pressureAlarm) 0.3f else 0f)
     val shakeX = if (shake > 0f) (fx.rand() - 0.5f) * 14f * u * shake else 0f
@@ -140,15 +287,50 @@ fun DrawScope.drawSea(
     translate(shakeX, shakeY) {
         drawLine(palette.horizon, Offset(0f, horizonY), Offset(w, horizonY), strokeWidth = 2f * u)
 
-        // Swell lines rushing towards the bow; spacing opens up with perspective.
+        // Swell lines rushing towards the bow; spacing opens up with perspective. The near ones
+        // carry a foam crest above them, which is what makes the swell read as water with a
+        // surface rather than as scrolling stripes.
         val travel = run.runElapsed * 0.55f * run.speedFactor
-        for (i in 0 until 10) {
-            val phase = (travel + i / 10f) % 1f
+        for (i in 0 until SWELL_LINES) {
+            val phase = (travel + i.toFloat() / SWELL_LINES) % 1f
             val s = phase * phase * 1.3f
             val y = screenY(s)
             if (y <= horizonY || y >= h) continue
             val sway = sin(run.runElapsed * 1.7f + i * 1.3f) * 5f * u * s
-            drawLine(Color.White.copy(alpha = (0.025f + 0.06f * s).coerceAtMost(0.09f)), Offset(0f, y + sway), Offset(w, y - sway), strokeWidth = (1f + s) * u)
+            drawLine(
+                Color.White.copy(alpha = (0.025f + 0.06f * s).coerceAtMost(0.09f)),
+                Offset(0f, y + sway),
+                Offset(w, y - sway),
+                strokeWidth = (1f + s) * u
+            )
+            if (s > 0.55f) {
+                val crest = ((s - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                drawLine(
+                    Color.White.copy(alpha = 0.06f * crest * (0.6f + 0.4f * palette.rain)),
+                    Offset(0f, y + sway - 2.5f * u * s),
+                    Offset(w, y - sway - 2.5f * u * s),
+                    strokeWidth = 1.2f * u
+                )
+            }
+        }
+
+        // Specular glints on the near water. Positions come from the index and drift with time,
+        // so they slide across the swell instead of flickering on and off.
+        for (i in 0 until GLINTS) {
+            val fi = i * 2.399f
+            val gs = 0.42f + (sin(fi) * 0.5f + 0.5f) * 0.58f
+            val gy = screenY(gs)
+            if (gy <= horizonY + hazeBand * 0.35f || gy >= h) continue
+            val drift = ((run.runElapsed * 0.17f + i * 0.137f) % 1f) * 2f - 1f
+            val gx = w / 2f + drift * w * 0.62f
+            val len = (5f + 12f * gs) * u
+            val twinkle = sin(run.runElapsed * 2.3f + fi) * 0.5f + 0.5f
+            drawLine(
+                Color.White.copy(alpha = (0.07f + 0.09f * gs * twinkle) * (1f - dread * 0.6f)),
+                Offset(gx - len, gy),
+                Offset(gx + len, gy),
+                strokeWidth = 1.4f * u
+            )
         }
 
         val bottomScale = (h - horizonY) / (playerY - horizonY)
@@ -171,11 +353,11 @@ fun DrawScope.drawSea(
         for (e in run.entities) if (e.z >= 0f && e.z < 100f) drawEntity(e, depth(e.z), screenX(e.x, depth(e.z)), screenY(depth(e.z)), u, run, flare, fx, textMeasurer)
 
         // Hunted: the far water closes in. Sonar and flares cut through it.
-        val fog = huntingFog * (1f - flare)
+        val fog = quantize(huntingFog * (1f - flare))
         if (fog > 0.01f) {
             val fogEnd = screenY(0.45f * fog)
             drawRect(
-                Brush.verticalGradient(listOf(Palette.Deep.copy(alpha = 0.95f * fog), Palette.Deep.copy(alpha = 0.85f * fog), Color.Transparent), startY = horizonY - 20f * u, endY = fogEnd + 30f * u),
+                fx.fog(fog, horizonY - 20f * u, fogEnd + 30f * u),
                 topLeft = Offset(0f, horizonY - 20f * u),
                 size = Size(w, fogEnd - horizonY + 50f * u)
             )
@@ -219,16 +401,17 @@ fun DrawScope.drawSea(
     }
 
     if (flare > 0f) {
-        drawRect(Brush.radialGradient(listOf(Color(0x66FFE2A0).copy(alpha = 0.35f * flare), Color.Transparent), center = Offset(w / 2f, horizonY), radius = w * 0.7f))
+        drawRect(fx.flareWash(0.35f * quantize(flare), w / 2f, horizonY, w * 0.7f))
     }
     if (submergeFog > 0f) {
-        drawRect(Color(0xFF06283A).copy(alpha = 0.6f * submergeFog))
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF020A10).copy(alpha = 0.7f * submergeFog), Color.Transparent), endY = h * 0.6f))
+        val veil = quantize(submergeFog)
+        drawRect(Color(0xFF06283A).copy(alpha = 0.6f * veil))
+        drawRect(fx.submergeVeil(0.7f * veil, h * 0.6f))
     }
     val hullRatio = if (run.maxHull > 0f) run.hull / run.maxHull else 1f
     if (hullRatio < 0.4f) {
-        val intensity = (0.4f - hullRatio) / 0.4f * blink(run.runElapsed, 5f)
-        drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Transparent, Palette.Red.copy(alpha = 0.55f * intensity)), center = Offset(w / 2f, h / 2f), radius = w * 0.75f))
+        val intensity = quantize((0.4f - hullRatio) / 0.4f * blink(run.runElapsed, 5f), 16f)
+        drawRect(fx.damageVignette(0.55f * intensity, w / 2f, h / 2f, w * 0.75f))
     }
     if (run.screenFlash > 0f) {
         val color = when (run.flashKind) {
@@ -345,96 +528,340 @@ private fun DrawScope.drawPursuer(p: Pursuer, u: Float, cx: Float, cy: Float, ru
             }
             if (flare > 0f) drawCircle(Palette.Amber.copy(alpha = flare * 0.35f), r * 3f, Offset.Zero)
             val path = fx.path
+            val faded = if (p.state == PursuerState.LOST_TARGET) 0.4f else 1f
+
+            // Displacement shadow and the wake they drag back towards the horizon.
+            drawOval(
+                Color(0xFF01070A).copy(alpha = 0.34f * faded),
+                topLeft = Offset(-1.3f * r, -1.9f * r),
+                size = Size(2.6f * r, 4.0f * r)
+            )
             path.reset()
+            path.moveTo(-0.45f * r, 0.9f * r)
+            path.lineTo(0.45f * r, 0.9f * r)
+            path.lineTo(1.5f * r, 4.4f * r)
+            path.lineTo(-1.5f * r, 4.4f * r)
+            path.close()
+            drawPath(path, Color.White.copy(alpha = 0.09f * faded))
+
+            pursuerHull(path, p.type, r)
+            drawPath(path, enemyColor(p.type).copy(alpha = faded))
+
+            // Deck shading: one side always darker, which keeps the form solid at small sizes.
+            drawRect(
+                Color.Black.copy(alpha = 0.18f * faded),
+                topLeft = Offset(-1.5f * r, -0.1f * r),
+                size = Size(1.5f * r, 1.4f * r)
+            )
+
+            // Superstructure and lights, different per class, so the threat is read from the
+            // shape and not from the colour alone.
             when (p.type) {
-                EnemyBoatType.PATROL, EnemyBoatType.POLICE -> {
-                    path.moveTo(0f, -r * 2f)
-                    path.lineTo(r * 0.8f, r)
-                    path.lineTo(-r * 0.8f, r)
+                EnemyBoatType.PATROL -> {
+                    drawRoundRect(Color(0xFF232A2E).copy(alpha = faded), topLeft = Offset(-0.42f * r, -0.5f * r), size = Size(0.84f * r, 1.0f * r), cornerRadius = CornerRadius(0.12f * r))
+                    drawCircle(Palette.Amber.copy(alpha = 0.85f * faded), 0.22f * r, Offset(0f, -0.75f * r))
                 }
-                EnemyBoatType.INTERCEPTOR, EnemyBoatType.HUNTER -> {
-                    path.moveTo(0f, -r * 2.5f)
-                    path.lineTo(r, r * 0.5f)
-                    path.lineTo(0f, r)
-                    path.lineTo(-r, r * 0.5f)
+                EnemyBoatType.POLICE -> {
+                    drawRoundRect(Color(0xFF1B2740).copy(alpha = faded), topLeft = Offset(-0.38f * r, -0.5f * r), size = Size(0.76f * r, 0.9f * r), cornerRadius = CornerRadius(0.12f * r))
+                    // Alternating light bar.
+                    val blue = (run.runElapsed * 8f).toInt() % 2 == 0
+                    drawRect(if (blue) Color(0xFF3060FF) else Palette.Red, topLeft = Offset(-0.45f * r, -0.78f * r), size = Size(0.45f * r, 0.20f * r))
+                    drawRect(if (blue) Palette.Red else Color(0xFF3060FF), topLeft = Offset(0f, -0.78f * r), size = Size(0.45f * r, 0.20f * r))
+                }
+                EnemyBoatType.INTERCEPTOR -> {
+                    drawRoundRect(Color(0xFF1E2A1E).copy(alpha = faded), topLeft = Offset(-0.3f * r, -0.9f * r), size = Size(0.6f * r, 1.3f * r), cornerRadius = CornerRadius(0.1f * r))
+                    drawCircle(Palette.Cyan.copy(alpha = 0.5f * faded), 0.3f * r, Offset(-0.32f * r, 1.0f * r))
+                    drawCircle(Palette.Cyan.copy(alpha = 0.5f * faded), 0.3f * r, Offset(0.32f * r, 1.0f * r))
+                }
+                EnemyBoatType.HUNTER -> {
+                    // Runs dark: faceted deck, no navigation lights at all. You hear it first.
+                    path.reset()
+                    path.moveTo(0f, -1.6f * r)
+                    path.lineTo(0.42f * r, 0.1f * r)
+                    path.lineTo(0f, 0.7f * r)
+                    path.lineTo(-0.42f * r, 0.1f * r)
+                    path.close()
+                    drawPath(path, Color(0xFF15181A).copy(alpha = faded))
                 }
                 EnemyBoatType.ARMORED -> {
-                    path.moveTo(0f, -r * 1.5f)
-                    path.lineTo(r * 1.5f, -r * 0.5f)
-                    path.lineTo(r * 1.2f, r * 1.5f)
-                    path.lineTo(-r * 1.2f, r * 1.5f)
-                    path.lineTo(-r * 1.5f, -r * 0.5f)
+                    // Raised bulwark ring and a heavy deck house.
+                    drawOval(Color(0xFF6B5C46).copy(alpha = 0.55f * faded), topLeft = Offset(-1.1f * r, -0.8f * r), size = Size(2.2f * r, 2.0f * r), style = Stroke(0.18f * r))
+                    drawRoundRect(Color(0xFF2E2A22).copy(alpha = faded), topLeft = Offset(-0.5f * r, -0.4f * r), size = Size(1.0f * r, 1.1f * r), cornerRadius = CornerRadius(0.1f * r))
+                    drawCircle(Palette.Amber.copy(alpha = 0.7f * faded), 0.2f * r, Offset(0f, -0.62f * r))
                 }
                 EnemyBoatType.ELITE -> {
-                    path.moveTo(0f, -r * 3f)
-                    path.lineTo(r * 1.2f, r * 1.2f)
-                    path.lineTo(r * 0.5f, r * 0.8f)
-                    path.lineTo(-r * 0.5f, r * 0.8f)
-                    path.lineTo(-r * 1.2f, r * 1.2f)
+                    // Dorsal fin plus twin searchlights: the apex silhouette.
+                    path.reset()
+                    path.moveTo(0f, -1.1f * r)
+                    path.lineTo(0.22f * r, 0.9f * r)
+                    path.lineTo(-0.22f * r, 0.9f * r)
+                    path.close()
+                    drawPath(path, Color(0xFF3A0A0D).copy(alpha = faded))
+                    drawCircle(Palette.Red.copy(alpha = 0.95f * faded), 0.22f * r, Offset(-0.5f * r, -0.5f * r))
+                    drawCircle(Palette.Red.copy(alpha = 0.95f * faded), 0.22f * r, Offset(0.5f * r, -0.5f * r))
                 }
             }
-            path.close()
-            val faded = if (p.state == PursuerState.LOST_TARGET) 0.4f else 1f
-            drawPath(path, enemyColor(p.type).copy(alpha = faded))
-            drawPath(path, Palette.Red.copy(alpha = faded), style = Stroke(1.5f * u))
-            val light = if (p.type == EnemyBoatType.POLICE && (run.runElapsed * 8f).toInt() % 2 == 0) Color(0xFF3060FF) else Palette.Red
-            drawCircle(light.copy(alpha = 0.9f * faded), r * 0.3f, Offset(0f, -r * 0.4f))
+
+            // Silhouette edge, and a bow wave when it is actually closing.
+            pursuerHull(path, p.type, r)
+            drawPath(path, Palette.Red.copy(alpha = 0.85f * faded), style = Stroke(1.5f * u))
+            if (p.state == PursuerState.PURSUIT || p.state == PursuerState.INTERCEPT) {
+                drawOval(
+                    Color.White.copy(alpha = 0.18f * faded),
+                    topLeft = Offset(-0.8f * r, -2.4f * r),
+                    size = Size(1.6f * r, 1.2f * r),
+                    style = Stroke(1.4f * u)
+                )
+            }
             if (run.sonar.active) drawCircle(Palette.Cyan, r * 2.2f, Offset.Zero, style = Stroke(2f * u))
         }
     }
 }
 
+/**
+ * Builds the player hull into [into]: a real boat form rather than a triangle. Curved sheer from
+ * a fine bow through the shoulders to a square transom, drawn bow-up around the origin so the
+ * caller can roll it. [scale] shrinks the same outline for the deck inset and the damage flash,
+ * so every layer shares one silhouette.
+ */
+private fun playerHull(into: Path, u: Float, scale: Float = 1f) {
+    val k = u * scale
+    into.reset()
+    into.moveTo(0f, -44f * k)
+    into.quadraticTo(16f * k, -34f * k, 21f * k, -8f * k)
+    into.quadraticTo(23f * k, 10f * k, 18f * k, 28f * k)
+    into.lineTo(13f * k, 36f * k)
+    into.lineTo(-13f * k, 36f * k)
+    into.lineTo(-18f * k, 28f * k)
+    into.quadraticTo(-23f * k, 10f * k, -21f * k, -8f * k)
+    into.quadraticTo(-16f * k, -34f * k, 0f, -44f * k)
+    into.close()
+}
+
 private fun DrawScope.drawPlayer(run: RunState, boat: BoatSpec, cx: Float, cy: Float, u: Float, h: Float, fx: SeaEffects) {
-    val path = fx.path
+    val wake = fx.path
     val submerged = run.dive.submerged
+    val boosting = run.speedFactor > 1.1f
 
     // Wake: a fan from the stern that bends away from the turn.
     val spread = (22f + (run.speedFactor - 0.8f) * 60f) * u
     val bend = -run.playerVelocityX * 120f * u
-    path.reset()
-    path.moveTo(cx - 8f * u, cy + 30f * u)
-    path.quadraticTo(cx - spread * 0.5f + bend * 0.4f, cy + (h - cy) * 0.5f, cx - spread + bend, h)
-    path.lineTo(cx + spread + bend, h)
-    path.quadraticTo(cx + spread * 0.5f + bend * 0.4f, cy + (h - cy) * 0.5f, cx + 8f * u, cy + 30f * u)
-    path.close()
-    drawPath(path, Color.White.copy(alpha = if (submerged) 0.04f else 0.13f))
+    wake.reset()
+    wake.moveTo(cx - 8f * u, cy + 30f * u)
+    wake.quadraticTo(cx - spread * 0.5f + bend * 0.4f, cy + (h - cy) * 0.5f, cx - spread + bend, h)
+    wake.lineTo(cx + spread + bend, h)
+    wake.quadraticTo(cx + spread * 0.5f + bend * 0.4f, cy + (h - cy) * 0.5f, cx + 8f * u, cy + 30f * u)
+    wake.close()
+    drawPath(wake, Color.White.copy(alpha = if (submerged) 0.04f else 0.13f))
+
+    if (!submerged) {
+        // Turbulent core inside the fan, and the two crest lines that make it read as a V.
+        wake.reset()
+        wake.moveTo(cx - 5f * u, cy + 30f * u)
+        wake.quadraticTo(cx - spread * 0.22f + bend * 0.4f, cy + (h - cy) * 0.5f, cx - spread * 0.42f + bend, h)
+        wake.lineTo(cx + spread * 0.42f + bend, h)
+        wake.quadraticTo(cx + spread * 0.22f + bend * 0.4f, cy + (h - cy) * 0.5f, cx + 5f * u, cy + 30f * u)
+        wake.close()
+        drawPath(wake, Color.White.copy(alpha = if (boosting) 0.16f else 0.10f))
+        drawPath(wake, Color.White.copy(alpha = 0.14f), style = Stroke(1.5f * u))
+
+        // Engine light spilling onto the water astern: a tapered cyan column.
+        wake.reset()
+        wake.moveTo(cx - 9f * u, cy + 34f * u)
+        wake.lineTo(cx + 9f * u, cy + 34f * u)
+        wake.lineTo(cx + spread * 0.34f + bend * 0.7f, h)
+        wake.lineTo(cx - spread * 0.34f + bend * 0.7f, h)
+        wake.close()
+        drawPath(wake, Palette.Cyan.copy(alpha = if (boosting) 0.13f else 0.07f))
+    }
 
     translate(cx, cy) {
         rotate(run.playerRoll, pivot = Offset.Zero) {
             val alpha = if (submerged) 0.45f else 1f
-            path.reset()
-            path.moveTo(0f, -40f * u)
-            path.lineTo(22f * u, 8f * u)
-            path.lineTo(16f * u, 34f * u)
-            path.lineTo(-16f * u, 34f * u)
-            path.lineTo(-22f * u, 8f * u)
-            path.close()
-            drawPath(path, Color(boat.hullColor).copy(alpha = alpha))
-            drawPath(path, Palette.Cyan.copy(alpha = 0.55f * alpha), style = Stroke(2f * u))
+            val hull = fx.path2
+            val hullColor = Color(boat.hullColor)
 
-            path.reset()
-            path.moveTo(0f, -14f * u)
-            path.lineTo(10f * u, 8f * u)
-            path.lineTo(-10f * u, 8f * u)
-            path.close()
-            drawPath(path, Color.Black.copy(alpha = alpha))
+            // BACKGROUND — displacement shadow, offset aft so the boat sits in the water.
+            drawOval(
+                Color(0xFF01070A).copy(alpha = 0.40f * alpha),
+                topLeft = Offset(-26f * u, -38f * u),
+                size = Size(52f * u, 88f * u)
+            )
 
-            val glow = if (run.speedFactor > 1.1f) 1.8f else 1f
-            drawCircle(Palette.Cyan.copy(alpha = 0.55f * alpha), radius = 7f * u * glow, center = Offset(-7f * u, 38f * u))
-            drawCircle(Palette.Cyan.copy(alpha = 0.55f * alpha), radius = 7f * u * glow, center = Offset(7f * u, 38f * u))
+            // Bow wave: the water pushed aside ahead of the stem.
+            if (!submerged) {
+                drawOval(
+                    Color.White.copy(alpha = 0.16f),
+                    topLeft = Offset(-17f * u, -50f * u),
+                    size = Size(34f * u, 26f * u),
+                    style = Stroke(2f * u)
+                )
+            }
+
+            // HULL.
+            playerHull(hull, u)
+            drawPath(hull, hullColor.copy(alpha = alpha))
+
+            // LIGHT — the lee side darkens as the boat rolls, so the roll is visible on the hull
+            // itself and not only in its rotation.
+            val lee = (run.playerRoll / 18f).coerceIn(-1f, 1f)
+            if (abs(lee) > 0.05f) {
+                val side = if (lee > 0f) -1f else 1f
+                hull.reset()
+                hull.moveTo(0f, -44f * u)
+                hull.quadraticTo(side * 18f * u, -30f * u, side * 22f * u, 4f * u)
+                hull.quadraticTo(side * 20f * u, 26f * u, side * 13f * u, 36f * u)
+                hull.lineTo(0f, 36f * u)
+                hull.close()
+                drawPath(hull, Color.Black.copy(alpha = 0.22f * abs(lee) * alpha))
+            }
+
+            // DETAILS — deck inset, then the superstructure on top of it.
+            playerHull(hull, u, 0.70f)
+            drawPath(hull, Color.White.copy(alpha = 0.07f * alpha))
+
+            // STRUCTURE — cabin block with a lit top edge.
+            drawRoundRect(
+                Color(0xFF0A1A20).copy(alpha = alpha),
+                topLeft = Offset(-9.5f * u, -15f * u),
+                size = Size(19f * u, 24f * u),
+                cornerRadius = CornerRadius(3f * u)
+            )
+            drawLine(
+                Palette.Cyan.copy(alpha = 0.30f * alpha),
+                Offset(-8f * u, -14f * u),
+                Offset(8f * u, -14f * u),
+                strokeWidth = 1.4f * u
+            )
+
+            // Windscreen, raked back.
+            hull.reset()
+            hull.moveTo(-7f * u, -14f * u)
+            hull.lineTo(7f * u, -14f * u)
+            hull.lineTo(5f * u, -5f * u)
+            hull.lineTo(-5f * u, -5f * u)
+            hull.close()
+            drawPath(hull, Color(0xFF02080C).copy(alpha = alpha))
+            drawLine(
+                Color.White.copy(alpha = 0.22f * alpha),
+                Offset(-6f * u, -12.5f * u),
+                Offset(2f * u, -12.5f * u),
+                strokeWidth = 1.2f * u
+            )
+
+            // Side strakes: two rubbing strips down the length.
+            drawLine(Color.White.copy(alpha = 0.13f * alpha), Offset(-18.5f * u, -6f * u), Offset(-15f * u, 28f * u), strokeWidth = 1.3f * u)
+            drawLine(Color.White.copy(alpha = 0.13f * alpha), Offset(18.5f * u, -6f * u), Offset(15f * u, 28f * u), strokeWidth = 1.3f * u)
+
+            // Deck hardware near the bow.
+            drawCircle(Color.White.copy(alpha = 0.16f * alpha), 1.6f * u, Offset(0f, -30f * u))
+            drawCircle(Color.White.copy(alpha = 0.12f * alpha), 1.4f * u, Offset(-5f * u, -22f * u))
+            drawCircle(Color.White.copy(alpha = 0.12f * alpha), 1.4f * u, Offset(5f * u, -22f * u))
+
+            // Navigation lights: red to port, green to starboard. Real naval language, and it
+            // tells the player which way the bow is pointing at a glance.
+            if (!submerged) {
+                drawCircle(Palette.Red.copy(alpha = 0.85f), 2.2f * u, Offset(-20f * u, 0f))
+                drawCircle(Palette.Green.copy(alpha = 0.85f), 2.2f * u, Offset(20f * u, 0f))
+            }
+
+            // EFFECT — engine glow, brighter and wider on the boost.
+            val glow = if (boosting) 1.8f else 1f
+            drawCircle(Palette.Cyan.copy(alpha = 0.22f * alpha), radius = 11f * u * glow, center = Offset(-7f * u, 38f * u))
+            drawCircle(Palette.Cyan.copy(alpha = 0.22f * alpha), radius = 11f * u * glow, center = Offset(7f * u, 38f * u))
+            drawCircle(Palette.Cyan.copy(alpha = 0.60f * alpha), radius = 6f * u * glow, center = Offset(-7f * u, 38f * u))
+            drawCircle(Palette.Cyan.copy(alpha = 0.60f * alpha), radius = 6f * u * glow, center = Offset(7f * u, 38f * u))
+
+            // Silhouette edge last, so the boat stays readable against bright water on a phone.
+            playerHull(hull, u)
+            drawPath(hull, Palette.Cyan.copy(alpha = 0.62f * alpha), style = Stroke(2f * u))
 
             if (run.invulnerable > 0f) {
-                path.reset()
-                path.moveTo(0f, -40f * u)
-                path.lineTo(22f * u, 8f * u)
-                path.lineTo(16f * u, 34f * u)
-                path.lineTo(-16f * u, 34f * u)
-                path.lineTo(-22f * u, 8f * u)
-                path.close()
-                drawPath(path, Color.White.copy(alpha = blink(run.runElapsed, 30f) * 0.45f))
+                drawPath(hull, Color.White.copy(alpha = blink(run.runElapsed, 30f) * 0.45f))
             }
         }
     }
+}
+
+/** How many swell lines and water glints the sea carries. Kept here so the cost is one edit. */
+private const val SWELL_LINES = 14
+private const val GLINTS = 12
+
+/**
+ * Snaps a 0..1 driver onto [steps] levels. Anything that ends up baked into a cached gradient goes
+ * through this first: detection and fog climb continuously, and without quantising, every frame
+ * would produce a slightly different colour and defeat the cache in [SeaEffects].
+ */
+private fun quantize(v: Float, steps: Float = 24f): Float = (v * steps).toInt() / steps
+
+/**
+ * Builds a pursuer hull into [into], bow-up around the origin, sized from [r].
+ *
+ * Each class gets its own form on purpose: at these sizes on a phone, shape carries the threat
+ * faster than colour does, and colour alone fails for a colour-blind player.
+ */
+private fun pursuerHull(into: Path, type: EnemyBoatType, r: Float) {
+    into.reset()
+    when (type) {
+        // Beamy workboat: blunt stem, full shoulders, square transom.
+        EnemyBoatType.PATROL -> {
+            into.moveTo(0f, -1.9f * r)
+            into.quadraticTo(0.95f * r, -1.4f * r, 1.02f * r, -0.1f * r)
+            into.lineTo(0.88f * r, 1.25f * r)
+            into.lineTo(-0.88f * r, 1.25f * r)
+            into.lineTo(-1.02f * r, -0.1f * r)
+            into.quadraticTo(-0.95f * r, -1.4f * r, 0f, -1.9f * r)
+        }
+        // Same family as the patrol but finer and faster-looking.
+        EnemyBoatType.POLICE -> {
+            into.moveTo(0f, -2.1f * r)
+            into.quadraticTo(0.78f * r, -1.5f * r, 0.85f * r, -0.1f * r)
+            into.lineTo(0.72f * r, 1.2f * r)
+            into.lineTo(-0.72f * r, 1.2f * r)
+            into.lineTo(-0.85f * r, -0.1f * r)
+            into.quadraticTo(-0.78f * r, -1.5f * r, 0f, -2.1f * r)
+        }
+        // Needle: long, narrow, almost no freeboard.
+        EnemyBoatType.INTERCEPTOR -> {
+            into.moveTo(0f, -2.9f * r)
+            into.quadraticTo(0.58f * r, -1.6f * r, 0.66f * r, 0.2f * r)
+            into.lineTo(0.56f * r, 1.3f * r)
+            into.lineTo(-0.56f * r, 1.3f * r)
+            into.lineTo(-0.66f * r, 0.2f * r)
+            into.quadraticTo(-0.58f * r, -1.6f * r, 0f, -2.9f * r)
+        }
+        // Faceted and chined: hard angles, no curves anywhere.
+        EnemyBoatType.HUNTER -> {
+            into.moveTo(0f, -2.5f * r)
+            into.lineTo(0.5f * r, -1.5f * r)
+            into.lineTo(0.82f * r, 0.2f * r)
+            into.lineTo(0.62f * r, 1.3f * r)
+            into.lineTo(-0.62f * r, 1.3f * r)
+            into.lineTo(-0.82f * r, 0.2f * r)
+            into.lineTo(-0.5f * r, -1.5f * r)
+        }
+        // Wide and heavy: it does not turn, it arrives.
+        EnemyBoatType.ARMORED -> {
+            into.moveTo(0f, -1.5f * r)
+            into.quadraticTo(1.3f * r, -1.1f * r, 1.45f * r, 0.1f * r)
+            into.lineTo(1.3f * r, 1.6f * r)
+            into.lineTo(-1.3f * r, 1.6f * r)
+            into.lineTo(-1.45f * r, 0.1f * r)
+            into.quadraticTo(-1.3f * r, -1.1f * r, 0f, -1.5f * r)
+        }
+        // Longest and sharpest, with swept-back quarters.
+        EnemyBoatType.ELITE -> {
+            into.moveTo(0f, -3.1f * r)
+            into.quadraticTo(0.72f * r, -1.7f * r, 0.9f * r, 0.4f * r)
+            into.lineTo(1.15f * r, 1.5f * r)
+            into.lineTo(0.42f * r, 1.15f * r)
+            into.lineTo(-0.42f * r, 1.15f * r)
+            into.lineTo(-1.15f * r, 1.5f * r)
+            into.lineTo(-0.9f * r, 0.4f * r)
+            into.quadraticTo(-0.72f * r, -1.7f * r, 0f, -3.1f * r)
+        }
+    }
+    into.close()
 }
 
 private fun enemyColor(type: EnemyBoatType): Color = when (type) {

@@ -1,8 +1,11 @@
 {
-  "name": "marea-nera",
+  "name": "black-wake",
   "version": "1.0.0",
+  "private": true,
+  "description": "Black Wake is a native Android game (Kotlin + Jetpack Compose). These scripts proxy to the Gradle wrapper.",
   "scripts": {
-    "build": "gradle assembleDebug",
-    "dev": "gradle assembleDebug"
+    "build": "./gradlew assembleDebug",
+    "dev": "./gradlew installDebug",
+    "test": "./gradlew testDebugUnitTest"
   }
 }

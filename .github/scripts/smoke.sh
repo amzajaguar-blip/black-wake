@@ -10,9 +10,21 @@ FAILED=0
 
 note() { echo "$*" | tee -a "$OUT/summary.txt"; }
 alive() { adb shell pidof "$PKG" > /dev/null 2>&1; }
+# uiautomator's dumper trips over its own stale nodes while the game animates,
+# so retry and fall back to the compressed hierarchy before giving up.
 dump() {
-  adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
-  adb exec-out cat /sdcard/ui.xml > "$OUT/$1.xml"
+  local out="$OUT/$1.xml" i
+  for i in 1 2 3; do
+    adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+    adb exec-out cat /sdcard/ui.xml > "$out" 2>/dev/null
+    grep -q "</hierarchy>" "$out" 2>/dev/null && return 0
+    adb shell uiautomator dump --compressed /sdcard/ui.xml > /dev/null 2>&1
+    adb exec-out cat /sdcard/ui.xml > "$out" 2>/dev/null
+    grep -q "</hierarchy>" "$out" 2>/dev/null && return 0
+    sleep 1
+  done
+  note "dump failed: $1"
+  return 1
 }
 step() {
   if alive; then
@@ -120,8 +132,9 @@ if find_node "RIPROVA" 2 > /dev/null; then
 fi
 
 adb logcat -d > "$OUT/logcat.txt"
-if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then
-  note "FATAL EXCEPTION found in logcat:"
+# Only the game's own crashes matter here; the uiautomator dumper crashes on its own.
+if grep -A 2 "FATAL EXCEPTION" "$OUT/logcat.txt" | grep -q "Process: $PKG"; then
+  note "FATAL EXCEPTION in $PKG:"
   grep -A 30 "FATAL EXCEPTION" "$OUT/logcat.txt" | head -60 | tee -a "$OUT/summary.txt"
   FAILED=1
 fi

@@ -16,6 +16,7 @@ class MusicDirector(context: Context) {
     private val app = context.applicationContext
     private val tracks = intArrayOf(R.raw.music_route, R.raw.music_pursuit, R.raw.music_uplink)
     private val players = arrayOfNulls<MediaPlayer>(tracks.size)
+    private val prepared = BooleanArray(tracks.size)
     private val failed = BooleanArray(tracks.size)
     private val levels = FloatArray(tracks.size)
     private var paused = false
@@ -49,6 +50,7 @@ class MusicDirector(context: Context) {
         for (i in players.indices) {
             players[i]?.release()
             players[i] = null
+            prepared[i] = false
         }
     }
 
@@ -56,6 +58,7 @@ class MusicDirector(context: Context) {
         val level = levels[index]
         val player = players[index] ?: if (level > 0f) create(index) else null
         player ?: return
+        if (!prepared[index]) return
         try {
             player.setVolume(level, level)
             if (level > 0f && !player.isPlaying) player.start()
@@ -63,6 +66,7 @@ class MusicDirector(context: Context) {
         } catch (e: IllegalStateException) {
             player.release()
             players[index] = null
+            prepared[index] = false
             failed[index] = true
         }
     }
@@ -82,13 +86,19 @@ class MusicDirector(context: Context) {
                 }
                 isLooping = true
                 setVolume(0f, 0f)
-                prepare()
                 setOnErrorListener { mp, _, _ ->
                     mp.release()
                     players[index] = null
+                    prepared[index] = false
                     failed[index] = true
                     true
                 }
+                // Asynchronous: decoding a multi-megabyte track on the main thread stalls the frame.
+                setOnPreparedListener {
+                    prepared[index] = true
+                    apply(index)
+                }
+                prepareAsync()
             }.also { players[index] = it }
         } catch (e: Exception) {
             failed[index] = true

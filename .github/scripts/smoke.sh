@@ -84,40 +84,38 @@ tap "INIZIA MISSIONE"; sleep 3; step 04-run-start
 expect "SCAFO"
 expect "Pausa"
 
-# Pause menu, its panels and resume, while the mission is still alive.
-tap "Pausa"; sleep 2; step 05-pause
-expect "SOSPENSIONE"
-tap "MAPPA TATTICA"; sleep 2; step 06-pause-map
-tap "REGISTRO DI BORDO"; sleep 2; step 07-pause-log
-tap "RIPRENDI"; sleep 2
+# Everything below must happen while the mission is still alive, so it runs first
+# and with short waits: an unattended boat sinks in well under a minute.
 
-# The back key must pause instead of leaving the game.
-adb shell input keyevent KEYCODE_BACK; sleep 2; step 08-back-pauses
+# Leaving and returning must come back paused, not running blind or crashed.
+adb shell input keyevent KEYCODE_HOME; sleep 3
+adb shell am start -W -n "$PKG/.MainActivity"; sleep 3
+step 05-resume-from-background
 expect "SOSPENSIONE"
 tap "RIPRENDI"; sleep 1
 
-# Leaving and returning must come back paused, not mid-crash.
-adb shell input keyevent KEYCODE_HOME; sleep 3
-adb shell am start -W -n "$PKG/.MainActivity"; sleep 4
-step 09-resume-from-background
+# The back key must pause instead of leaving the game.
+adb shell input keyevent KEYCODE_BACK; sleep 2; step 06-back-pauses
 expect "SOSPENSIONE"
+tap "MAPPA TATTICA"; sleep 2; step 07-pause-map
+tap "REGISTRO DI BORDO"; sleep 2; step 08-pause-log
 tap "RIPRENDI"; sleep 1
 
 # Controls: steer, then hold the dive button.
 adb shell input swipe 700 700 1500 700 1200
-sleep 2; step 10-run-steer
-if xy=$(find_node "Immergi"); then
+sleep 2; step 09-run-steer
+if xy=$(find_node "Immergi" 2); then
   set -- $xy
   adb shell input swipe "$1" "$2" "$1" "$2" 2500 &
   sleep 1.5
-  step 11-run-dive
+  step 10-run-dive
   wait
 fi
 
 # Let the mission play out; a death ends in the debrief, which must offer a retry.
-sleep 30; step 12-run-late
+sleep 30; step 11-run-late
 if find_node "RIPROVA" 2 > /dev/null; then
-  tap "RIPROVA"; sleep 3; step 13-retry
+  tap "RIPROVA"; sleep 3; step 12-retry
   expect "SCAFO"
 fi
 

@@ -28,7 +28,8 @@ step() {
 # Prints "x y" for the centre of the first node whose text or content-desc contains $1.
 find_node() {
   local label="$1" tries=0 b
-  while [ $tries -lt 8 ]; do
+  local limit="${2:-8}"
+  while [ $tries -lt $limit ]; do
     dump ui-tmp
     b=$(tr '>' '\n' < "$OUT/ui-tmp.xml" | grep -F "$label" | grep -o 'bounds="[^"]*"' | head -1 | grep -o '[0-9]\+' | tr '\n' ' ')
     if [ -n "$b" ]; then
@@ -54,9 +55,13 @@ tap() {
 }
 
 adb install -r "$APK" || { note "install failed"; exit 1; }
+# The system "Viewing full screen" confirmation would sit on top of the game and eat every tap.
+adb shell settings put secure immersive_mode_confirmations confirmed
 adb logcat -c
 adb shell am start -W -n "$PKG/.MainActivity"
 sleep 8
+# Belt and braces: dismiss the confirmation if this image still shows it.
+if xy=$(find_node "Got it" 2 2>/dev/null); then adb shell input tap $xy; sleep 1; fi
 
 step 01-menu
 tap "OFFICINA"; sleep 2; step 02-garage

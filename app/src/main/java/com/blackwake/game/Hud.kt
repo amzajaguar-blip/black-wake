@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -150,7 +151,7 @@ private fun MissionPanel(run: RunState, chapter: Chapter, sector: Sector, modifi
             val alpha = if (message.tone == MessageTone.DANGER) blink(run.runElapsed, 14f) else 1f
             Text(
                 message.text, color = toneColor(message.tone).copy(alpha = alpha), fontSize = 13.sp, fontFamily = Mono,
-                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 4.dp).background(Palette.Deep.copy(alpha = 0.6f)).padding(horizontal = 8.dp, vertical = 2.dp)
             )
         }

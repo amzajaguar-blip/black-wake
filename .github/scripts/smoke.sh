@@ -60,33 +60,66 @@ adb shell settings put secure immersive_mode_confirmations confirmed
 adb logcat -c
 adb shell am start -W -n "$PKG/.MainActivity"
 sleep 8
-# Belt and braces: dismiss the confirmation if this image still shows it.
 if xy=$(find_node "Got it" 2 2>/dev/null); then adb shell input tap $xy; sleep 1; fi
 
+# Fails the run when an expected element is missing from the current screen.
+expect() {
+  if find_node "$1" 2 > /dev/null; then
+    note "expect ok: '$1'"
+  else
+    note "EXPECT FAILED: '$1'"
+    FAILED=1
+  fi
+}
+
 step 01-menu
+expect "BLACK WAKE"
+
 tap "OFFICINA"; sleep 2; step 02-garage
+expect "MODULI"
 tap "INDIETRO"; sleep 2
+
 tap "IL RELITTO"; sleep 2; step 03-briefing
 tap "INIZIA MISSIONE"; sleep 3; step 04-run-start
-adb shell input swipe 1900 800 1950 800 1200
-sleep 4; step 05-run-steer
+expect "SCAFO"
+expect "Pausa"
+
+# Pause menu, its panels and resume, while the mission is still alive.
+tap "Pausa"; sleep 2; step 05-pause
+expect "SOSPENSIONE"
+tap "MAPPA TATTICA"; sleep 2; step 06-pause-map
+tap "REGISTRO DI BORDO"; sleep 2; step 07-pause-log
+tap "RIPRENDI"; sleep 2
+
+# The back key must pause instead of leaving the game.
+adb shell input keyevent KEYCODE_BACK; sleep 2; step 08-back-pauses
+expect "SOSPENSIONE"
+tap "RIPRENDI"; sleep 1
+
+# Leaving and returning must come back paused, not mid-crash.
+adb shell input keyevent KEYCODE_HOME; sleep 3
+adb shell am start -W -n "$PKG/.MainActivity"; sleep 4
+step 09-resume-from-background
+expect "SOSPENSIONE"
+tap "RIPRENDI"; sleep 1
+
+# Controls: steer, then hold the dive button.
+adb shell input swipe 700 700 1500 700 1200
+sleep 2; step 10-run-steer
 if xy=$(find_node "Immergi"); then
   set -- $xy
   adb shell input swipe "$1" "$2" "$1" "$2" 2500 &
-  sleep 1.2
-  step 06-run-dive
+  sleep 1.5
+  step 11-run-dive
   wait
 fi
-sleep 8; step 07-run-late
-tap "Pausa"; sleep 2; step 08-pause
-tap "REGISTRO DI BORDO"; sleep 2; step 09-pause-log
-tap "RIPRENDI"; sleep 2
-adb shell input keyevent KEYCODE_BACK; sleep 2; step 10-back-pauses
-tap "RIPRENDI"; sleep 1
-adb shell input keyevent KEYCODE_HOME; sleep 3
-adb shell am start -W -n "$PKG/.MainActivity"; sleep 3
-step 11-resume-from-background
-tap "RIPRENDI"; sleep 25; step 12-run-long
+
+# Let the mission play out; a death ends in the debrief, which must offer a retry.
+sleep 30; step 12-run-late
+if find_node "RIPROVA" 2 > /dev/null; then
+  tap "RIPROVA"; sleep 3; step 13-retry
+  expect "SCAFO"
+fi
 
 adb logcat -d > "$OUT/logcat.txt"
 if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then

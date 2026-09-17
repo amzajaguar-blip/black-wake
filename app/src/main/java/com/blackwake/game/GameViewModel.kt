@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
@@ -113,12 +114,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onAppBackground() {
+        Log.i(TAG, "background: pausing mission and audio")
         pause()
         SynthAudioEngine.pause()
         music.pause()
     }
 
     fun onAppForeground() {
+        Log.i(TAG, "foreground: mode=${_uiState.value.mode}")
         SynthAudioEngine.resume()
         music.resume()
     }
@@ -283,5 +286,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val AUDIO_TICK_MS = 50L
+        const val TAG = "BlackWake"
     }
 }

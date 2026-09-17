@@ -17,8 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.isActive
 
@@ -27,8 +25,6 @@ fun BlackWakeApp(viewModel: GameViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val running = state.mode == GameMode.RUNNING
 
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onAppBackground() }
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onAppForeground() }
     BackHandler(enabled = state.mode != GameMode.MENU) { viewModel.onBack() }
     KeepScreenOn(running)
     if (running) GameLoop(viewModel)

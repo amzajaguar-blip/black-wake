@@ -132,6 +132,11 @@ if find_node "RIPROVA" 2 > /dev/null; then
 fi
 
 adb logcat -d > "$OUT/logcat.txt"
+if ! grep -q "BlackWake.*background: pausing" "$OUT/logcat.txt"; then
+  note "the app never reported going to the background"
+  FAILED=1
+fi
+
 # Only the game's own crashes matter here; the uiautomator dumper crashes on its own.
 if grep -A 2 "FATAL EXCEPTION" "$OUT/logcat.txt" | grep -q "Process: $PKG"; then
   note "FATAL EXCEPTION in $PKG:"

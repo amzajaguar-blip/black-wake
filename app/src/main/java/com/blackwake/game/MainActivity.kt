@@ -4,15 +4,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
+    private val viewModel: GameViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -28,10 +30,20 @@ class MainActivity : ComponentActivity() {
                     onSurface = Palette.Text
                 )
             ) {
-                val viewModel: GameViewModel = viewModel()
                 BlackWakeApp(viewModel)
             }
         }
+    }
+
+    /** Losing focus (home, recents, a system dialog) must pause the mission and the audio. */
+    override fun onPause() {
+        super.onPause()
+        viewModel.onAppBackground()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onAppForeground()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

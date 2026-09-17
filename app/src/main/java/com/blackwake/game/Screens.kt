@@ -135,7 +135,8 @@ fun BriefingScreen(state: GameState, viewModel: GameViewModel) {
                 Spacer(Modifier.height(8.dp))
                 Text("MAYA: ${chapter.maya}", color = Palette.Cyan.copy(alpha = 0.85f), fontSize = 13.sp, fontStyle = FontStyle.Italic)
             }
-            Column(Modifier.weight(0.45f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+            Column(Modifier.weight(0.45f).fillMaxHeight()) {
+              Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 Panel(Modifier.fillMaxWidth()) {
                     Label("OBIETTIVO", Palette.Amber, 10.sp)
                     Text(
@@ -158,11 +159,12 @@ fun BriefingScreen(state: GameState, viewModel: GameViewModel) {
                     ControlLine("OVERRIDE", "più veloce, consuma batteria")
                     ControlLine("PARATIE", "sigilla una falla: ferma l'allagamento, rallenta")
                 }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TacticalButton("INIZIA MISSIONE", onClick = viewModel::startRun, filled = true)
-                    TacticalButton("INDIETRO", onClick = viewModel::openMenu, color = Palette.Muted)
-                }
+              }
+              // Pinned: the primary action must never sit below the fold.
+              Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  TacticalButton("INIZIA MISSIONE", onClick = viewModel::startRun, filled = true)
+                  TacticalButton("INDIETRO", onClick = viewModel::openMenu, color = Palette.Muted)
+              }
             }
         }
     }
@@ -386,9 +388,9 @@ fun DebriefScreen(state: GameState, viewModel: GameViewModel) {
                 .widthIn(max = 620.dp)
                 .background(Palette.PanelSolid)
                 .border(1.dp, accent)
-                .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
+          Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             Label("DEBRIEFING // CAP ${chapter.code} ${chapter.title}", Palette.Muted, 10.sp)
             Text(if (outcome.won) "MISSIONE COMPIUTA" else "MISSIONE FALLITA", color = accent, fontSize = 26.sp, fontFamily = Mono, fontWeight = FontWeight.Bold)
             Text(outcome.reason, color = Palette.Text, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
@@ -409,11 +411,12 @@ fun DebriefScreen(state: GameState, viewModel: GameViewModel) {
             } else if (outcome.banked > 0) {
                 Text("Il 40% dell'intel raccolta è stato messo al sicuro.", color = Palette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
             }
-            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (hasNext) TacticalButton("PROSSIMO CAPITOLO", onClick = viewModel::openNextChapter, filled = true)
-                TacticalButton("RIPROVA", onClick = viewModel::startRun, filled = !hasNext)
-                TacticalButton("MENU", onClick = viewModel::openMenu, color = Palette.Muted)
-            }
+          }
+          Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              if (hasNext) TacticalButton("PROSSIMO CAPITOLO", onClick = viewModel::openNextChapter, filled = true)
+              TacticalButton("RIPROVA", onClick = viewModel::startRun, filled = !hasNext)
+              TacticalButton("MENU", onClick = viewModel::openMenu, color = Palette.Muted)
+          }
         }
     }
 }

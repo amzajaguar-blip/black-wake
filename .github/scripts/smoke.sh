@@ -4,7 +4,10 @@
 set -u
 APK="$1"
 OUT="$2"
-PKG=com.blackwake.game
+PKG=com.frenzy_rush
+# The activity keeps the source namespace, which is not the applicationId,
+# so the component name has to be spelled out rather than written "$PKG/.MainActivity".
+ACTIVITY=com.blackwake.game.MainActivity
 mkdir -p "$OUT"
 FAILED=0
 
@@ -70,7 +73,7 @@ adb install -r "$APK" || { note "install failed"; exit 1; }
 # The system "Viewing full screen" confirmation would sit on top of the game and eat every tap.
 adb shell settings put secure immersive_mode_confirmations confirmed
 adb logcat -c
-adb shell am start -W -n "$PKG/.MainActivity"
+adb shell am start -W -n "$PKG/$ACTIVITY"
 sleep 8
 if xy=$(find_node "Got it" 2 2>/dev/null); then adb shell input tap $xy; sleep 1; fi
 
@@ -101,7 +104,7 @@ expect "Pausa"
 
 # Leaving and returning must come back paused, not running blind or crashed.
 adb shell input keyevent KEYCODE_HOME; sleep 3
-adb shell am start -W -n "$PKG/.MainActivity"; sleep 3
+adb shell am start -W -n "$PKG/$ACTIVITY"; sleep 3
 step 05-resume-from-background
 expect "SOSPENSIONE"
 tap "RIPRENDI"; sleep 1

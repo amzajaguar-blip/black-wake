@@ -5,7 +5,7 @@ This project is wired to be wrapped into a native Android app via Capacitor. The
 | Field | Initial value |
 | --- | --- |
 | App name | Black Wake |
-| Application ID | `com.blackwake.game` |
+| Application ID | `com.frenzy_rush` |
 | Initial version | `1.0.0` |
 | Web bundle | `dist/public` |
 | Orientation | Landscape |

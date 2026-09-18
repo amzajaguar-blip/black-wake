@@ -11,7 +11,10 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.blackwake.game"
+        // The Play Console identity. Deliberately different from the namespace above:
+        // the namespace only names the Kotlin/R/BuildConfig package and renaming it
+        // would touch every source file for no gain, since Play only sees this.
+        applicationId = "com.frenzy_rush"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

@@ -22,7 +22,8 @@ installazione di Gradle di sistema.
 
 | | |
 | --- | --- |
-| Application ID | `com.blackwake.game` |
+| Application ID | `com.frenzy_rush` |
+| Namespace sorgenti | `com.blackwake.game` |
 | minSdk / targetSdk | 26 / 36 |
 | Orientamento | Landscape |
 | Permessi | `VIBRATE` |

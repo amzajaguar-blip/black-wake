@@ -95,7 +95,34 @@ expect "MODULI"
 tap "INDIETRO"; sleep 2
 
 tap "IL RELITTO"; sleep 2; step 03-briefing
-tap "INIZIA MISSIONE"; sleep 3; step 04-run-start
+tap "INIZIA MISSIONE"; sleep 2
+
+# Controls first, before the tutorial wreck arrives: steer, then hold the dive button.
+# Being submerged also carries the boat under wrecks, so it survives the pause checks below.
+adb shell input swipe 700 700 1500 700 1200
+step 09-run-steer
+if xy=$(find_node "Immergi" 2); then
+  set -- $xy
+  adb shell input swipe "$1" "$2" "$1" "$2" 5000 &
+  sleep 1.5
+  step 10-run-dive
+  wait
+  # While submerged the dive button shows the oxygen percentage instead of "TIENI".
+  if ! grep -q "</hierarchy>" "$OUT/10-run-dive.xml" 2>/dev/null; then
+    note "DIVE NOT VERIFIED: no usable 10-run-dive.xml"
+    FAILED=1
+  elif grep -qF 'text="TIENI"' "$OUT/10-run-dive.xml"; then
+    note "DIVE NOT ENGAGED"
+    FAILED=1
+  else
+    note "expect ok: dive engaged"
+  fi
+else
+  note "NOT FOUND: dive control 'Immergi'"
+  FAILED=1
+fi
+
+step 04-run-start
 expect "SCAFO"
 expect "Pausa"
 
@@ -115,17 +142,6 @@ expect "SOSPENSIONE"
 tap "MAPPA TATTICA"; sleep 2; step 07-pause-map
 tap "REGISTRO DI BORDO"; sleep 2; step 08-pause-log
 tap "RIPRENDI"; sleep 1
-
-# Controls: steer, then hold the dive button.
-adb shell input swipe 700 700 1500 700 1200
-sleep 2; step 09-run-steer
-if xy=$(find_node "Immergi" 2); then
-  set -- $xy
-  adb shell input swipe "$1" "$2" "$1" "$2" 2500 &
-  sleep 1.5
-  step 10-run-dive
-  wait
-fi
 
 # Let the mission play out; a death ends in the debrief, which must offer a retry.
 sleep 30; step 11-run-late

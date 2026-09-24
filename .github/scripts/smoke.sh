@@ -18,9 +18,12 @@ alive() { adb shell pidof "$PKG" > /dev/null 2>&1; }
 dump() {
   local out="$OUT/$1.xml" i
   for i in 1 2 3; do
+    # Remove the previous dump first, so a failed dump can never pass off a stale file as new.
+    adb shell rm -f /sdcard/ui.xml
     adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
     adb exec-out cat /sdcard/ui.xml > "$out" 2>/dev/null
     grep -q "</hierarchy>" "$out" 2>/dev/null && return 0
+    adb shell rm -f /sdcard/ui.xml
     adb shell uiautomator dump --compressed /sdcard/ui.xml > /dev/null 2>&1
     adb exec-out cat /sdcard/ui.xml > "$out" 2>/dev/null
     grep -q "</hierarchy>" "$out" 2>/dev/null && return 0
@@ -169,7 +172,7 @@ else
   FAILED=1
 fi
 
-# Run 2: steer and a proven dive, all within about 9 s of the fresh run's clock.
+# Run 2: steer and a proven dive, early in the fresh run, well before the boat sinks.
 if [ $RETRY_REACHED -ne 1 ]; then
   note "run 2 skipped: the retry was never reached"
   FAILED=1
@@ -181,12 +184,18 @@ else
   adb shell input swipe 700 700 1500 700 1200
   shot 09-run-steer
   # Held longer than the 4 s of oxygen, so the game must log that the oxygen ran out.
+  # 12 s of wall time, not 6: each frame advances the game by at most 0.05 s
+  # (BlackWakeApp.kt MAX_STEP_SECONDS), so on the slow emulator the game clock runs at
+  # 0.62x wall time or less. The RELITTO tutorial line then also lands in the log; that is expected.
   set -- $DIVE_XY
-  adb shell input swipe "$1" "$2" "$1" "$2" 6000 &
+  DIVE_T0=$(date +%s.%N)
+  adb shell input swipe "$1" "$2" "$1" "$2" 12000 &
   sleep 1.5
   shot 10-run-dive
   wait
+  DIVE_T1=$(date +%s.%N)
   adb shell input keyevent KEYCODE_BACK
+  note "dive hold wall=$(awk -v a="$DIVE_T0" -v b="$DIVE_T1" 'BEGIN { printf "%.2f", b - a }')s"
   tap "REGISTRO DI BORDO"; sleep 1
   step 10b-dive-log
   if ! grep -q "</hierarchy>" "$OUT/10b-dive-log.xml" 2>/dev/null; then
@@ -196,6 +205,8 @@ else
     note "expect ok: dive engaged (log)"
   else
     note "DIVE NOT ENGAGED"
+    # The log's T+ stamps are game time, so this shows how far the game clock got.
+    note "diag: feed=$(tr '>' '\n' < "$OUT/10b-dive-log.xml" | grep -o 'text="[^"]*"' | sed 's/^text="//; s/"$//' | sed -n '/ VOCI$/,$p' | sed 1d | grep -v '^$' | head -12 | paste -sd ' ' -)"
     FAILED=1
   fi
   tap "RIPRENDI"

@@ -226,7 +226,94 @@ if grep -A 2 "FATAL EXCEPTION" "$OUT/logcat.txt" | grep -q "Process: $PKG"; then
   grep -A 30 "FATAL EXCEPTION" "$OUT/logcat.txt" | head -60 | tee -a "$OUT/summary.txt"
   FAILED=1
 fi
-grep -E "E AndroidRuntime|W System.err|Choreographer.*Skipped" "$OUT/logcat.txt" | grep -i "blackwake\|Skipped" | head -20 >> "$OUT/summary.txt"
+# Runtime errors from the app's own processes only.
+APP_PIDS=$(grep -oE "Start proc [0-9]+:com\.frenzy_rush/" "$OUT/logcat.txt" | grep -oE "[0-9]+" | sort -u | paste -sd '|' -)
+if [ -n "$APP_PIDS" ]; then
+  grep -E "^[0-9-]+ [0-9:.]+ +($APP_PIDS) +[0-9]+ [EW] (AndroidRuntime|System\.err)" "$OUT/logcat.txt" | head -20 >> "$OUT/summary.txt"
+fi
+
+# Main-thread stalls of the app, reported by rule S v2 (startup window vs the rest of the run).
+# Reporting only: limits and verdicts over a pair of runs are applied in review, not here.
+python3 --version
+if ! S2_NOTES=$(python3 - "$OUT/logcat.txt" "$OUT/s2.json" <<'S2_PY'
+import json
+import re
+import sys
+from datetime import datetime
+
+LINE = re.compile(r"^(\d\d-\d\d) (\d\d:\d\d:\d\d\.\d{3})\s+(\d+)\s+(\d+)\s+[VDIWEF]\s+(\S+)\s*:\s?(.*)$")
+START = re.compile(r"Start proc (\d+):com\.frenzy_rush/")
+DISPLAYED = re.compile(r"Displayed com\.frenzy_rush/\S+ .*\+(\d+)s(\d+)ms")
+SKIPPED = re.compile(r"Skipped (\d+) frames")
+STARTUP_WINDOW_S = 12.0
+
+
+def stamp(day, clock):
+    return datetime.strptime(f"2000-{day} {clock}", "%Y-%m-%d %H:%M:%S.%f")
+
+
+logcat_path, json_path = sys.argv[1], sys.argv[2]
+parsed = []
+starts = {}
+start_count = 0
+displayed_ms = None
+with open(logcat_path, encoding="utf-8", errors="replace") as logcat:
+    for raw in logcat:
+        line = raw.rstrip("\n")
+        m = LINE.match(line)
+        if m:
+            parsed.append(m)
+        s = START.search(line)
+        if s:
+            start_count += 1
+            if m and s.group(1) not in starts:
+                starts[s.group(1)] = f"{m.group(1)} {m.group(2)}"
+        if displayed_ms is None:
+            d = DISPLAYED.search(line)
+            if d:
+                displayed_ms = int(d.group(1)) * 1000 + int(d.group(2))
+
+reasons = []
+if start_count == 0:
+    reasons.append("no Start proc")
+if displayed_ms is None:
+    reasons.append("no Displayed com.frenzy_rush")
+if not parsed:
+    reasons.append("no line matches the S2-1 regex")
+
+events = []
+for m in parsed:
+    pid = m.group(3)
+    if pid not in starts or m.group(5) != "Choreographer":
+        continue
+    k = SKIPPED.search(m.group(6))
+    if not k:
+        continue
+    after = (stamp(m.group(1), m.group(2)) - stamp(*starts[pid].split(" "))).total_seconds()
+    window = "W1" if 0.0 <= after <= STARTUP_WINDOW_S else "W2"
+    events.append({"pid": int(pid), "seconds_after_a0": round(after, 3), "frames": int(k.group(1)), "window": window})
+
+summary = {"unevaluable": reasons, "a0": starts, "displayed_ms": displayed_ms, "process_starts": start_count, "events": events}
+with open(json_path, "w") as out:
+    json.dump(summary, out, indent=2)
+
+if reasons:
+    for reason in reasons:
+        print(f"S2 UNEVALUABLE: {reason}")
+else:
+    print(f"S2 anchor: pids={','.join(starts)} A0={','.join(starts.values())} D={displayed_ms} P={start_count}")
+    for window, label in (("W1", "W1(startup 12s)"), ("W2", "W2(run)")):
+        chosen = [e for e in events if e["window"] == window]
+        largest = max((e["frames"] for e in chosen), default=0)
+        listed = ", ".join(f"{e['frames']}@+{e['seconds_after_a0']:.1f}" for e in chosen)
+        print(f"S2 {label}: E={len(chosen)} M={largest} events=[{listed}]")
+S2_PY
+); then
+  note "S2 report failed: the python3 parser exited with an error"
+fi
+while IFS= read -r line; do
+  [ -n "$line" ] && note "$line"
+done <<< "$S2_NOTES"
 rm -f "$OUT/ui-tmp.xml"
 note "result: $([ $FAILED -eq 0 ] && echo PASS || echo FAIL)"
 exit $FAILED

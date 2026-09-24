@@ -119,6 +119,32 @@ expect_in() {
   fi
 }
 
+# Frame statistics from `dumpsys gfxinfo`. The counters run from process start and are never
+# reset, so a later sample includes the earlier one. Informational only: nothing here sets FAILED.
+# $1 is the label (run1 or final), $2 the saved dumpsys output.
+gfx_note() {
+  local label="$1" file="$2" field value frames janky p50 p90 p99
+  if [ ! -s "$file" ]; then
+    note "gfx $label UNEVALUABLE: $(basename "$file") is missing or empty"
+    return
+  fi
+  for field in "Total frames rendered" "Janky frames" "50th percentile" "90th percentile" "99th percentile"; do
+    value=$(tr -d '\r' < "$file" | sed -n "s/^$field: //p" | head -1)
+    if [ -z "$value" ]; then
+      note "gfx $label UNEVALUABLE: no '$field' line in $(basename "$file")"
+      return
+    fi
+    case "$field" in
+      "Total frames rendered") frames="$value" ;;
+      "Janky frames") janky="$value" ;;
+      "50th percentile") p50="$value" ;;
+      "90th percentile") p90="$value" ;;
+      "99th percentile") p99="$value" ;;
+    esac
+  done
+  note "gfx $label (not gated): frames=$frames janky=$janky p50=$p50 p90=$p90 p99=$p99"
+}
+
 step 01-menu
 expect "BLACK WAKE"
 
@@ -166,10 +192,13 @@ done
 if [ $RETRY_REACHED -eq 1 ]; then
   step 11-run-late
   note "retry reached after $((SECONDS - RETRY_START))s"
+  adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-run1.txt"
+  gfx_note run1 "$OUT/gfxinfo-run1.txt"
   tap "RIPROVA"
 else
   note "RETRY NOT REACHED within 120s"
   FAILED=1
+  gfx_note run1 "$OUT/gfxinfo-run1.txt"
 fi
 
 # Run 2: steer and a proven dive, early in the fresh run, well before the boat sinks.
@@ -213,6 +242,9 @@ else
   step 12-retry
   expect "SCAFO"
 fi
+
+adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo.txt"
+gfx_note final "$OUT/gfxinfo.txt"
 
 adb logcat -d > "$OUT/logcat.txt"
 if ! grep -q "BlackWake.*background: pausing" "$OUT/logcat.txt"; then

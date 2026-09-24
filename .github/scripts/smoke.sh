@@ -243,7 +243,8 @@ from datetime import datetime
 
 LINE = re.compile(r"^(\d\d-\d\d) (\d\d:\d\d:\d\d\.\d{3})\s+(\d+)\s+(\d+)\s+[VDIWEF]\s+(\S+)\s*:\s?(.*)$")
 START = re.compile(r"Start proc (\d+):com\.frenzy_rush/")
-DISPLAYED = re.compile(r"Displayed com\.frenzy_rush/\S+ .*\+(\d+)s(\d+)ms")
+# Android prints the startup time as +812ms, +1s2ms or +1m2s3ms; absent parts count as 0.
+DISPLAYED = re.compile(r"Displayed com\.frenzy_rush/\S+ .*\+(?:(\d+)m)?(?:(\d+)s)?(\d+)ms")
 SKIPPED = re.compile(r"Skipped (\d+) frames")
 STARTUP_WINDOW_S = 12.0
 
@@ -255,7 +256,9 @@ def stamp(day, clock):
 logcat_path, json_path = sys.argv[1], sys.argv[2]
 parsed = []
 starts = {}
+start_lines = 0
 start_count = 0
+unparsed_start = False
 displayed_ms = None
 with open(logcat_path, encoding="utf-8", errors="replace") as logcat:
     for raw in logcat:
@@ -265,16 +268,21 @@ with open(logcat_path, encoding="utf-8", errors="replace") as logcat:
             parsed.append(m)
         s = START.search(line)
         if s:
-            start_count += 1
-            if m and s.group(1) not in starts:
-                starts[s.group(1)] = f"{m.group(1)} {m.group(2)}"
+            start_lines += 1
+            if not m:
+                unparsed_start = True
+            else:
+                start_count += 1
+                if s.group(1) not in starts:
+                    starts[s.group(1)] = f"{m.group(1)} {m.group(2)}"
         if displayed_ms is None:
             d = DISPLAYED.search(line)
             if d:
-                displayed_ms = int(d.group(1)) * 1000 + int(d.group(2))
+                minutes, seconds, millis = (int(g) if g else 0 for g in d.groups())
+                displayed_ms = minutes * 60000 + seconds * 1000 + millis
 
 reasons = []
-if start_count == 0:
+if start_lines == 0:
     reasons.append("no Start proc")
 if displayed_ms is None:
     reasons.append("no Displayed com.frenzy_rush")
@@ -293,6 +301,13 @@ for m in parsed:
     window = "W1" if 0.0 <= after <= STARTUP_WINDOW_S else "W2"
     events.append({"pid": int(pid), "seconds_after_a0": round(after, 3), "frames": int(k.group(1)), "window": window})
 
+# A start line the parser cannot read would silently lose its anchor, and the fixed
+# year makes offsets go negative across New Year: neither run can be judged.
+if unparsed_start:
+    reasons.append("unparsed Start proc")
+if any(e["seconds_after_a0"] < 0 for e in events):
+    reasons.append("negative offset")
+
 summary = {"unevaluable": reasons, "a0": starts, "displayed_ms": displayed_ms, "process_starts": start_count, "events": events}
 with open(json_path, "w") as out:
     json.dump(summary, out, indent=2)
@@ -305,7 +320,7 @@ else:
     for window, label in (("W1", "W1(startup 12s)"), ("W2", "W2(run)")):
         chosen = [e for e in events if e["window"] == window]
         largest = max((e["frames"] for e in chosen), default=0)
-        listed = ", ".join(f"{e['frames']}@+{e['seconds_after_a0']:.1f}" for e in chosen)
+        listed = ", ".join(f"{e['frames']}@+{e['seconds_after_a0']:.3f}" for e in chosen)
         print(f"S2 {label}: E={len(chosen)} M={largest} events=[{listed}]")
 S2_PY
 ); then

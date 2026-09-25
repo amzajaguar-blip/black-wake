@@ -22,10 +22,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Assemble, unit test, lint
         run: ./gradlew --stacktrace assembleDebug testDebugUnitTest lintDebug
-      - name: Assemble release (R8 + resource shrinking)
-        run: ./gradlew --stacktrace assembleRelease
+      - name: Assemble release APK and bundle (R8 + resource shrinking)
+        run: ./gradlew --stacktrace assembleRelease bundleRelease
       - name: Report APK sizes
-        run: ls -lh app/build/outputs/apk/*/*.apk
+        run: ls -lh app/build/outputs/apk/*/*.apk app/build/outputs/bundle/release/*.aab
+      - name: Dump release APK badging
+        run: |
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT2" dump badging app/build/outputs/apk/release/*.apk | tee release-badging.txt
+          if grep -q 'application-debuggable' release-badging.txt; then
+            echo 'Release APK is debuggable' >&2
+            exit 1
+          fi
+          if ! grep '^package:' release-badging.txt | grep -q "name='com.frenzy_rush'"; then
+            echo "Release APK package name does not contain name='com.frenzy_rush'" >&2
+            exit 1
+          fi
+      - name: Upload release bundle and APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            app/build/outputs/bundle/release/*.aab
+            app/build/outputs/apk/release/*.apk
+            release-badging.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

@@ -156,6 +156,10 @@ tap "IL RELITTO"; sleep 2; step 03-briefing
 # Run 1: pause, background and back. The game runs unattended here and a boat sinks in
 # about 22 s, so only one dump is taken while it runs; everything after HOME is paused.
 tap "INIZIA MISSIONE"; sleep 2
+if ! find_node "SCAFO"; then
+  note "NOT FOUND after starting mission: 'SCAFO'"
+  FAILED=1
+fi
 step 04-run-start
 expect_in 04-run-start "SCAFO"
 expect_in 04-run-start "Pausa"

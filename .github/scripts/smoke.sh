@@ -42,6 +42,23 @@ step() {
     FAILED=1
   fi
 }
+# Records a screenshot only when both surrounding hierarchy dumps prove the run screen.
+step_proven() {
+  if alive; then
+    dump "$1-pre"
+    adb exec-out screencap -p > "$OUT/$1.png"
+    dump "$1"
+    if run_screen_in "$OUT/$1-pre.xml" && run_screen_in "$OUT/$1.xml"; then
+      note "ok: $1 (run screen proven before and after screenshot)"
+    else
+      note "RUN SCREEN NOT PROVEN around $1 screenshot"
+      FAILED=1
+    fi
+  else
+    note "DEAD at: $1"
+    FAILED=1
+  fi
+}
 # Screenshot only, for moments while the game runs: a uiautomator dump would stall it.
 shot() {
   if alive; then
@@ -76,6 +93,11 @@ find_node() {
     sleep 1.5
   done
   return 1
+}
+
+# Checks that a hierarchy dump shows the paused run screen, not the mission briefing.
+run_screen_in() {
+  grep -qF 'content-desc="Pausa"' "$1" && ! grep -qF 'INIZIA MISSIONE' "$1"
 }
 
 tap() {
@@ -153,14 +175,25 @@ expect "MODULI"
 tap "INDIETRO"; sleep 2
 
 tap "IL RELITTO"; sleep 2; step 03-briefing
-# Run 1: pause, background and back. The game runs unattended here and a boat sinks in
-# about 22 s, so only one dump is taken while it runs; everything after HOME is paused.
+# Run 1: pause, background and back. While the mission runs, the script takes the wait
+# loop's dumps (up to 8) plus the 2 dumps around the run-start screenshot; everything after
+# HOME is paused.
 tap "INIZIA MISSIONE"; sleep 2
-if ! find_node "SCAFO"; then
-  note "NOT FOUND after starting mission: 'SCAFO'"
+RUN_SCREEN_REACHED=0
+for RUN_SCREEN_TRY in 1 2 3 4 5 6 7 8; do
+  dump ui-tmp > /dev/null
+  if run_screen_in "$OUT/ui-tmp.xml"; then
+    note "run screen reached after $RUN_SCREEN_TRY dump(s)"
+    RUN_SCREEN_REACHED=1
+    break
+  fi
+  if [ "$RUN_SCREEN_TRY" -lt 8 ]; then sleep 1; fi
+done
+if [ "$RUN_SCREEN_REACHED" -ne 1 ]; then
+  note "RUN SCREEN NOT REACHED after INIZIA MISSIONE"
   FAILED=1
 fi
-step 04-run-start
+step_proven 04-run-start
 expect_in 04-run-start "SCAFO"
 expect_in 04-run-start "Pausa"
 DIVE_XY=$(xy_in_dump "$OUT/04-run-start.xml" "Immergi")

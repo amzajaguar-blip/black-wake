@@ -22,7 +22,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Assemble, unit test, lint
         run: ./gradlew --stacktrace assembleDebug testDebugUnitTest lintDebug
-      - name: Prepare upload keystore
+      - name: Assemble release APK and bundle (R8 + resource shrinking)
         shell: bash
         env:
           BW_UPLOAD_KEYSTORE_BASE64: ${{ secrets.BW_UPLOAD_KEYSTORE_BASE64 }}
@@ -31,19 +31,41 @@ jobs:
           BW_UPLOAD_KEY_PASSWORD: ${{ secrets.BW_UPLOAD_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "$BW_UPLOAD_KEYSTORE_BASE64" ]; then
+          configured=0
+          missing=()
+          for name in BW_UPLOAD_KEYSTORE_BASE64 BW_UPLOAD_STORE_PASSWORD BW_UPLOAD_KEY_ALIAS BW_UPLOAD_KEY_PASSWORD; do
+            if [ -n "${!name:-}" ]; then
+              configured=$((configured + 1))
+            else
+              missing+=("$name")
+            fi
+          done
+
+          if [ "$configured" -eq 0 ]; then
             echo "SIGNING: no secrets, unsigned build"
+            unset BW_UPLOAD_KEYSTORE_BASE64 BW_UPLOAD_STORE_PASSWORD BW_UPLOAD_KEY_ALIAS BW_UPLOAD_KEY_PASSWORD
+            printf '%s' unsigned > "$RUNNER_TEMP/signing-mode"
+          elif [ "$configured" -lt 4 ]; then
+            printf 'SIGNING: partially configured, missing: %s\n' "${missing[*]}" >&2
+            exit 1
           else
+            trap 'rm -f "$RUNNER_TEMP/upload.jks"' EXIT
             printf '%s' "$BW_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
-            {
-              printf 'BW_UPLOAD_STORE_FILE=%s\n' "$RUNNER_TEMP/upload.jks"
-              printf 'BW_UPLOAD_STORE_PASSWORD=%s\n' "$BW_UPLOAD_STORE_PASSWORD"
-              printf 'BW_UPLOAD_KEY_ALIAS=%s\n' "$BW_UPLOAD_KEY_ALIAS"
-              printf 'BW_UPLOAD_KEY_PASSWORD=%s\n' "$BW_UPLOAD_KEY_PASSWORD"
-            } >> "$GITHUB_ENV"
+            unset BW_UPLOAD_KEYSTORE_BASE64
+            export BW_UPLOAD_STORE_FILE="$RUNNER_TEMP/upload.jks"
+            printf '%s' signed > "$RUNNER_TEMP/signing-mode"
           fi
-      - name: Assemble release APK and bundle (R8 + resource shrinking)
-        run: ./gradlew --stacktrace assembleRelease bundleRelease
+
+          ./gradlew --no-daemon --stacktrace assembleRelease bundleRelease 2>&1 | tee "$RUNNER_TEMP/release-gradle.log"
+          if [ "$configured" -eq 4 ]; then
+            if ! grep -Fq 'Release signing: upload key configured' "$RUNNER_TEMP/release-gradle.log"; then
+              echo "ERROR: signed build did not report upload key configured" >&2
+              exit 1
+            fi
+          elif ! grep -Fq 'Release signing: not configured, building unsigned' "$RUNNER_TEMP/release-gradle.log"; then
+            echo "ERROR: unsigned build did not report unsigned signing mode" >&2
+            exit 1
+          fi
       - name: Report APK sizes
         run: ls -lh app/build/outputs/apk/*/*.apk app/build/outputs/bundle/release/*.aab
       - name: Dump release APK badging
@@ -88,13 +110,19 @@ jobs:
           fi
       - name: Verify release signing
         shell: bash
-        env:
-          BW_UPLOAD_KEYSTORE_BASE64: ${{ secrets.BW_UPLOAD_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          if [ -z "$BW_UPLOAD_KEYSTORE_BASE64" ]; then
+          if [ ! -r "$RUNNER_TEMP/signing-mode" ]; then
+            echo "ERROR: signing mode file is missing or unreadable" >&2
+            exit 1
+          fi
+          signing_mode=$(<"$RUNNER_TEMP/signing-mode")
+          if [ "$signing_mode" = unsigned ]; then
             echo "SIGNING VERIFY: SKIPPED (no secrets)"
             exit 0
+          elif [ "$signing_mode" != signed ]; then
+            echo "ERROR: signing mode file has invalid content" >&2
+            exit 1
           fi
 
           shopt -s nullglob

@@ -1,9 +1,42 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use(keystoreProperties::load)
+}
+
+fun signingValue(environmentName: String, propertyName: String): String? =
+    System.getenv(environmentName)?.takeIf { it.isNotBlank() }
+        ?: keystoreProperties.getProperty(propertyName)?.takeIf { it.isNotBlank() }
+
+val uploadStoreFile = signingValue("BW_UPLOAD_STORE_FILE", "storeFile")
+val uploadStorePassword = signingValue("BW_UPLOAD_STORE_PASSWORD", "storePassword")
+val uploadKeyAlias = signingValue("BW_UPLOAD_KEY_ALIAS", "keyAlias")
+val uploadKeyPassword = signingValue("BW_UPLOAD_KEY_PASSWORD", "keyPassword")
+val uploadSigningConfigured = listOf(
+    uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword
+).any { it != null }
+
+if (uploadSigningConfigured) {
+    val missing = mutableListOf<String>()
+    if (uploadStoreFile == null) missing += "BW_UPLOAD_STORE_FILE (storeFile)"
+    if (uploadStorePassword == null) missing += "BW_UPLOAD_STORE_PASSWORD (storePassword)"
+    if (uploadKeyAlias == null) missing += "BW_UPLOAD_KEY_ALIAS (keyAlias)"
+    if (uploadKeyPassword == null) missing += "BW_UPLOAD_KEY_PASSWORD (keyPassword)"
+    if (uploadStoreFile != null && !rootProject.file(uploadStoreFile).isFile) {
+        missing += "BW_UPLOAD_STORE_FILE (file not found)"
+    }
+    if (missing.isNotEmpty()) {
+        throw GradleException("Release signing partially configured: missing ${missing.joinToString(", ")}")
+    }
 }
 
 android {
@@ -25,8 +58,25 @@ android {
         }
     }
 
+    if (uploadSigningConfigured) {
+        signingConfigs {
+            create("upload") {
+                storeFile = rootProject.file(uploadStoreFile!!)
+                storePassword = uploadStorePassword!!
+                keyAlias = uploadKeyAlias!!
+                keyPassword = uploadKeyPassword!!
+            }
+        }
+        logger.lifecycle("Release signing: upload key configured")
+    } else {
+        logger.lifecycle("Release signing: not configured, building unsigned")
+    }
+
     buildTypes {
         release {
+            if (uploadSigningConfigured) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

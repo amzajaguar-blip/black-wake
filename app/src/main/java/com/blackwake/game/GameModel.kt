@@ -79,10 +79,6 @@ data class ForkNotice(val text: String, val expiresAt: Float)
 data class DiveState(
     val submerged: Boolean = false,
     val oxygen: Float = 100f,
-    val submergedTimer: Float = 0f,
-    val depth: Float = 0f,
-    val seabed: Float = 80f,
-    val pressureAlarm: Boolean = false,
     /** Set when oxygen ran out mid-dive; cleared once the dive control is released. */
     val lockedOut: Boolean = false
 )
@@ -146,7 +142,6 @@ data class RunState(
     val forkSpawned: Boolean = false,
     val forkNotice: ForkNotice? = null,
     val proximityPingTimer: Float = 0f,
-    val pressureBeepTimer: Float = 0f,
 
     val entities: List<Entity> = emptyList(),
     val pursuers: List<Pursuer> = emptyList(),

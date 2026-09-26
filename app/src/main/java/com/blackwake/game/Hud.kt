@@ -84,12 +84,8 @@ private fun StatusPanel(run: RunState, chapter: Chapter, modifier: Modifier) {
         )
         Gauge("CARBURANTE", "${run.fuel.toInt()}%", run.fuel / 100f, if (run.fuel > 20f) Palette.Amber else Palette.Red, run.fuel <= 20f, run.runElapsed)
         val dive = run.dive
-        val oxygenText = when {
-            dive.pressureAlarm -> "PRESSIONE! ${dive.depth.toInt()}m"
-            dive.submerged || dive.depth > 1f -> "${dive.oxygen.toInt()}% · ${dive.depth.toInt()}m"
-            else -> "${dive.oxygen.toInt()}%"
-        }
-        Gauge("OSSIGENO", oxygenText, dive.oxygen / 100f, if (dive.oxygen > 30f) Palette.Cyan else Palette.Red, dive.pressureAlarm || (dive.submerged && dive.oxygen < 30f), run.runElapsed)
+        val oxygenText = "${dive.oxygen.toInt()}%"
+        Gauge("OSSIGENO", oxygenText, dive.oxygen / 100f, if (dive.oxygen > 30f) Palette.Cyan else Palette.Red, dive.submerged && dive.oxygen < 30f, run.runElapsed)
         Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             val reached = run.intel >= chapter.intelRequired
             Label("INTEL ${run.intel}/${chapter.intelRequired}", if (reached) Palette.Green else Palette.Cyan, 12.sp)

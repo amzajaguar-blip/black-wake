@@ -1,12 +1,10 @@
 package com.blackwake.game
 
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
 import kotlin.math.sign
-import kotlin.math.sin
 import kotlin.random.Random
 
 data class RunInput(
@@ -30,7 +28,6 @@ class StepResult(val run: RunState, val events: List<GameEvent>, val outcome: Ru
  */
 object GameSimulation {
     const val PLAYER_Y = 85f
-    const val SAFE_DEPTH = 55f
     const val PING_RANGE = 110f
     const val PICKUP_HIT = 0.45f
     const val HAZARD_HIT = 0.30f
@@ -152,12 +149,7 @@ object GameSimulation {
         val ranOut = prevDive.submerged && !submerged && input.diveHeld
         if (ranOut) say("OSSIGENO ESAURITO // EMERSIONE", MessageTone.WARNING)
         val lockedOut = input.diveHeld && (prevDive.lockedOut || ranOut)
-        val submergedTimer = if (submerged) prevDive.submergedTimer + dt else max(0f, prevDive.submergedTimer - dt * 2f)
-        val seabed = max(10f, 80f + sin(elapsed * 0.4f) * 30f + cos(elapsed * 0.15f) * 20f)
-        val targetDepth = if (submerged) min(seabed, 15f + submergedTimer * 12f) else 0f
-        val depth = prevDive.depth + (targetDepth - prevDive.depth) * min(1f, dt * 1.5f)
-        val pressureAlarm = depth > SAFE_DEPTH
-        val dive = DiveState(submerged, oxygen, submergedTimer, depth, seabed, pressureAlarm, lockedOut)
+        val dive = DiveState(submerged = submerged, oxygen = oxygen, lockedOut = lockedOut)
 
         // --- Speed: throttle, vessel, override
         val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed * (if (overrideActive) 1.35f else 1f)
@@ -220,16 +212,6 @@ object GameSimulation {
         if (fuel <= 0f && invulnerable <= 0f) {
             hull -= 2.3f * dt
             deathReason = "Senza carburante il mare entra nello scafo."
-        }
-        var pressureBeep = prev.pressureBeepTimer - dt
-        if (pressureAlarm) {
-            hull -= 10f * dt
-            deathReason = "Scafo collassato sotto pressione estrema."
-            cameraShake = max(cameraShake, min(1f, (depth - SAFE_DEPTH) / 25f * 0.4f))
-            if (pressureBeep <= 0f) {
-                events += GameEvent.Tone(200f, 0.2f, 0.4f)
-                pressureBeep = 1f
-            }
         }
         // --- Player movement: magnetic lanes with inertia
         val drag = input.dragTargetX
@@ -556,7 +538,6 @@ object GameSimulation {
             forkSpawned = forkSpawned,
             forkNotice = forkNotice,
             proximityPingTimer = proximityPing,
-            pressureBeepTimer = max(0f, pressureBeep),
             entities = entities.sortedByDescending { it.z },
             pursuers = pursuers,
             nextId = nextId,

@@ -70,6 +70,16 @@ class GameSimulationTest {
     }
 
     @Test
+    fun longDiveCostsNoHullAndSurfacesOnEmptyOxygen() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val run = simulate(start, 6f, RunInput(diveHeld = true))
+        assertEquals(run.maxHull, run.hull, 0f)
+        assertTrue(run.feed.any { it.text.contains("OSSIGENO ESAURITO") })
+        assertFalse(run.dive.submerged)
+        assertTrue(run.dive.lockedOut)
+    }
+
+    @Test
     fun sonarPingCompletesAndChargeRegenerates() {
         val (pinged, _) = GameSimulation.triggerSonar(quietRun())
         assertTrue(pinged.sonar.active)

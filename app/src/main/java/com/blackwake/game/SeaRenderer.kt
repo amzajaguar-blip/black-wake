@@ -279,7 +279,7 @@ fun DrawScope.drawSea(
         size = Size(w, hazeBand)
     )
 
-    val shake = run.cameraShake + (if (run.detection > 0.85f) (run.detection - 0.85f) * 4f else 0f) + (if (run.dive.pressureAlarm) 0.3f else 0f)
+    val shake = run.cameraShake + (if (run.detection > 0.85f) (run.detection - 0.85f) * 4f else 0f)
     val shakeX = if (shake > 0f) (fx.rand() - 0.5f) * 14f * u * shake else 0f
     val shakeY = if (shake > 0f) (fx.rand() - 0.5f) * 14f * u * shake else 0f
     val playerX = screenX(run.playerX, 1f)

@@ -35,7 +35,7 @@ installazione di Gradle di sistema.
 | Trascina sul mare | Sposta la barca fra le tre corsie (corsie magnetiche con inerzia) |
 | Leva di potenza (in basso a sinistra) | Alta: veloce, consuma carburante, alza la firma. Bassa: silenzio, la firma cala, combo intel |
 | IMMERGI (tieni premuto) | Passa sotto relitti e pattuglie. Consuma ossigeno; le mine restano letali |
-| SONAR | Rivela i pericoli, anche nella nebbia dell'inseguimento |
+| Sonar (automatico) | Quando ti danno la caccia pulsa da solo e rivela i pericoli nella nebbia |
 | RAZZO | Acceca gli inseguitori e li fa perdere il contatto |
 | Pausa / tasto indietro | Sospende la missione, mappa tattica e registro di bordo |
 

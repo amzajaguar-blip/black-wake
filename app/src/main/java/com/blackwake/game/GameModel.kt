@@ -84,8 +84,7 @@ data class DiveState(
 )
 
 data class SonarState(
-    val charges: Int = 1,
-    val regenTimer: Float = 0f,
+    val cooldown: Float = 0f,
     val active: Boolean = false,
     /** Ping front, in the same distance units as [Entity.z]. */
     val radius: Float = 0f

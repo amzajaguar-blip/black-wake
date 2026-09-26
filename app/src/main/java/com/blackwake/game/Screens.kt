@@ -154,7 +154,6 @@ fun BriefingScreen(state: GameState, viewModel: GameViewModel) {
                     ControlLine("TRASCINA SUL MARE", "cambia corsia")
                     ControlLine("LEVA POTENZA", "alta: veloce e visibile · bassa: silenzio")
                     ControlLine("IMMERGI (tieni)", "passa sotto relitti e barche; consuma ossigeno")
-                    ControlLine("SONAR", "rivela i pericoli anche nella nebbia")
                     ControlLine("RAZZO", "acceca gli inseguitori")
                 }
               }

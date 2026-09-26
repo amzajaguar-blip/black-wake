@@ -44,7 +44,8 @@ class GameSimulationTest {
         assertEquals(100f, run.dive.oxygen, 0f)
         assertEquals(3, run.flare.charges)
         assertTrue(run.entities.isEmpty() && run.pursuers.isEmpty())
-        assertEquals(GameSimulation.maxSonarCharges(progress.modules), run.sonar.charges)
+        assertEquals(0f, run.sonar.cooldown, 0f)
+        assertFalse(run.sonar.active)
     }
 
     @Test
@@ -80,15 +81,57 @@ class GameSimulationTest {
     }
 
     @Test
-    fun sonarPingCompletesAndChargeRegenerates() {
-        val (pinged, _) = GameSimulation.triggerSonar(quietRun())
-        assertTrue(pinged.sonar.active)
-        assertEquals(0, pinged.sonar.charges)
+    fun sonarAutoPingsWithinOneSecondOfBeingHunted() {
+        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.PURSUIT)
+        var run = quietRun().copy(throttle = 0.5f, detection = 0.8f, pursuers = listOf(pursuer))
+        var frames = 0
+        var started = false
+        while (frames * FRAME < 1f && !started) {
+            val result = step(run)
+            frames++
+            started = !run.sonar.active && result.run.sonar.active
+            if (started) {
+                assertTrue(result.events.any { it is GameEvent.Tone && it.freq == 1320f })
+            }
+            run = result.run
+        }
+        assertTrue("sonar must start within one second of being hunted", started)
+        val finishBy = frames * FRAME + GameSimulation.PING_RANGE / 80f + 0.2f
+        while (frames * FRAME < finishBy && run.sonar.active) {
+            run = step(run).run
+            frames++
+        }
+        assertFalse("ping must finish within its propagation time", run.sonar.active)
+    }
 
-        var run = simulate(pinged, 2f)
-        assertFalse("ping must finish", run.sonar.active)
-        run = simulate(run, GameSimulation.sonarRegenSeconds(progress.modules) + 0.5f)
-        assertEquals(1, run.sonar.charges)
+    @Test
+    fun sonarRespectsCooldownWhileHunted() {
+        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.PURSUIT)
+        var run = quietRun().copy(pursuers = listOf(pursuer))
+        val starts = mutableListOf<Float>()
+        repeat((20f / FRAME).toInt()) { frame ->
+            // Test-harness pinning: re-inject PURSUIT so the hunted condition stays deterministic.
+            val pinned = run.copy(pursuers = listOf(pursuer))
+            val result = step(pinned)
+            if (!pinned.sonar.active && result.run.sonar.active) starts += (frame + 1) * FRAME
+            run = result.run
+        }
+        assertTrue("expected at least three automatic pings", starts.size >= 3)
+        starts.zipWithNext { first, second ->
+            assertTrue("pings must respect cooldown", second - first >= GameSimulation.sonarCooldownSeconds(progress.modules) - FRAME)
+        }
+        assertTrue(GameSimulation.sonarCooldownSeconds(Modules(radar = 3)) < GameSimulation.sonarCooldownSeconds(Modules()))
+    }
+
+    @Test
+    fun sonarStaysSilentWhenNotHunted() {
+        var run = quietRun()
+        repeat((10f / FRAME).toInt()) {
+            val result = step(run)
+            assertFalse(result.run.sonar.active)
+            assertFalse(result.events.any { it is GameEvent.Tone && it.freq == 1320f })
+            run = result.run
+        }
     }
 
     @Test

@@ -49,9 +49,7 @@ object GameSimulation {
         TutorialStep(10.5f, listOf(EntityType.ENEMY to 0, EntityType.ENEMY to 2), "LEVA BASSA: SILENZIO. LA FIRMA CALA")
     )
 
-    fun maxSonarCharges(modules: Modules): Int = 1 + modules.radar
-
-    fun sonarRegenSeconds(modules: Modules): Float = 20f - modules.radar * 3f
+    fun sonarCooldownSeconds(modules: Modules): Float = 6f - modules.radar * 1f
 
     fun bankedIntel(won: Boolean, intel: Int): Int = if (won) intel else (intel * 0.4f).toInt()
 
@@ -64,7 +62,7 @@ object GameSimulation {
         return RunState(
             hull = maxHull,
             maxHull = maxHull,
-            sonar = SonarState(charges = maxSonarCharges(progress.modules)),
+            sonar = SonarState(),
             message = HudMessage(title, MessageTone.INFO, MESSAGE_SECONDS),
             radio = RadioLine(first.radio, RADIO_SECONDS),
             feed = listOf(TerminalMessage(first.radio, MessageTone.INFO, 0f), TerminalMessage(title, MessageTone.INFO, 0f))
@@ -72,13 +70,6 @@ object GameSimulation {
     }
 
     fun setThrottle(run: RunState, value: Float): RunState = run.copy(throttle = value.coerceIn(0f, 1f))
-
-    fun triggerSonar(run: RunState): Pair<RunState, List<GameEvent>> {
-        val sonar = run.sonar
-        if (sonar.charges <= 0 || sonar.active) return run to emptyList()
-        return run.copy(sonar = sonar.copy(charges = sonar.charges - 1, active = true, radius = 0f)) to
-            listOf(GameEvent.Tone(1320f, 0.22f, 0.3f))
-    }
 
     fun launchFlare(run: RunState): Pair<RunState, List<GameEvent>> {
         val flare = run.flare
@@ -134,18 +125,14 @@ object GameSimulation {
         val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
-        var charges = prev.sonar.charges
-        var regen = prev.sonar.regenTimer
+        var cooldown = max(0f, prev.sonar.cooldown - dt)
         var pingActive = prev.sonar.active
         var pingRadius = prev.sonar.radius
-        if (charges < maxSonarCharges(modules)) {
-            regen += dt
-            if (regen >= sonarRegenSeconds(modules)) {
-                charges++
-                regen = 0f
-            }
-        } else {
-            regen = 0f
+        if (prev.hunted && !pingActive && cooldown <= 0f) {
+            pingActive = true
+            pingRadius = 0f
+            cooldown = sonarCooldownSeconds(modules)
+            events += GameEvent.Tone(1320f, 0.22f, 0.3f)
         }
         if (pingActive) {
             val oldRadius = pingRadius
@@ -158,7 +145,7 @@ object GameSimulation {
                 pingRadius = 0f
             }
         }
-        val sonar = SonarState(charges, regen, pingActive, pingRadius)
+        val sonar = SonarState(cooldown, pingActive, pingRadius)
 
         // --- Detection
         val hiding = prev.entities.any { it.type == EntityType.WRECK && it.z > 0f && it.z < 25f && abs(it.x - prev.playerX) < 0.6f }

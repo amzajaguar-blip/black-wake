@@ -273,15 +273,6 @@ private fun ActionPad(run: RunState, viewModel: GameViewModel, modifier: Modifie
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val sonar = run.sonar
-            ActionButton(
-                title = "SONAR",
-                detail = "x${sonar.charges}",
-                color = Palette.Cyan,
-                enabled = sonar.charges > 0 && !sonar.active,
-                active = sonar.active,
-                onClick = viewModel::triggerSonar
-            )
             DiveButton(run, viewModel)
         }
     }

@@ -149,7 +149,7 @@ val MODULES = listOf(
     ModuleDef("engine", "MOTORE", "SPINTA", "La spinta alta consuma meno carburante.", listOf(12, 28, 50)),
     ModuleDef("hull", "SCAFO", "INTEGRITÀ", "Più scafo, impatti meno violenti.", listOf(14, 30, 55)),
     ModuleDef("tank", "SERBATOIO", "AUTONOMIA", "Più carburante da ogni tanica.", listOf(10, 24, 44)),
-    ModuleDef("radar", "RADAR", "AVVISO", "Cariche sonar extra, ricarica più rapida.", listOf(16, 32, 58)),
+    ModuleDef("radar", "RADAR", "AVVISO", "Durante la caccia il sonar pulsa più spesso.", listOf(16, 32, 58)),
     ModuleDef("stealth", "SILENZIO", "FURTIVITÀ", "In silenzio la firma cala più in fretta.", listOf(18, 36, 64))
 )
 

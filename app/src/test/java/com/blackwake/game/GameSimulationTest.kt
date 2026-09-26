@@ -258,11 +258,9 @@ class GameSimulationTest {
     }
 
     @Test
-    fun overrideDrainsBatteryAndShutsDownWhenEmpty() {
-        val (active, _) = GameSimulation.toggleOverride(quietRun().copy(power = PowerState(battery = 12f)))
-        assertTrue(active.power.overrideActive)
-        val drained = simulate(active, 2f)
-        assertFalse(drained.power.overrideActive)
+    fun throttleAloneSetsTopSpeed() {
+        val run = simulate(quietRun().copy(throttle = 1f), 2f)
+        assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.01f)
     }
 
     @Test

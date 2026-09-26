@@ -75,7 +75,7 @@ object GameSimulation {
 
     fun triggerSonar(run: RunState): Pair<RunState, List<GameEvent>> {
         val sonar = run.sonar
-        if (sonar.charges <= 0 || sonar.active || run.power.overrideActive) return run to emptyList()
+        if (sonar.charges <= 0 || sonar.active) return run to emptyList()
         return run.copy(sonar = sonar.copy(charges = sonar.charges - 1, active = true, radius = 0f)) to
             listOf(GameEvent.Tone(1320f, 0.22f, 0.3f))
     }
@@ -92,17 +92,6 @@ object GameSimulation {
         )
         val text = if (dazzled > 0) "RAZZO // INSEGUITORI ACCECATI" else "RAZZO // ACQUA ILLUMINATA"
         return withMessages(next, listOf(text to MessageTone.WARNING)) to listOf(GameEvent.Noise(0.35f, 0.5f))
-    }
-
-    fun toggleOverride(run: RunState): Pair<RunState, List<GameEvent>> {
-        val power = run.power
-        if (!power.overrideActive && power.battery < 10f) {
-            return withMessages(run, listOf("BATTERIA INSUFFICIENTE" to MessageTone.WARNING)) to emptyList()
-        }
-        val active = !power.overrideActive
-        val text = if (active) "OVERRIDE // POTENZA DI EMERGENZA" else "OVERRIDE DISATTIVATO"
-        return withMessages(run.copy(power = power.copy(overrideActive = active)), listOf(text to MessageTone.WARNING)) to
-            listOf(GameEvent.Tone(if (active) 180f else 120f, 0.25f, 0.35f))
     }
 
     fun step(prev: RunState, chapterIndex: Int, progress: Progress, input: RunInput, dt: Float, rng: Random): StepResult {
@@ -127,23 +116,12 @@ object GameSimulation {
         val boosting = throttle > 0.8f
         val silent = throttle < 0.2f
 
-        // --- Emergency power
-        var overrideActive = prev.power.overrideActive
-        val battery = if (overrideActive) max(0f, prev.power.battery - dt * 10f) else min(100f, prev.power.battery + dt * 2.5f)
-        if (overrideActive && battery <= 0f) {
-            overrideActive = false
-            cameraShake = max(cameraShake, 0.5f)
-            events += GameEvent.Vibrate(listOf(0, 100, 50, 100))
-            say("OVERRIDE FALLITO // BATTERIA ESAURITA", MessageTone.DANGER)
-        }
-        val power = PowerState(overrideActive, battery)
-
         // --- Dive
         val prevDive = prev.dive
         val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f))
         val wantsDive = input.diveHeld && canDive
-        val oxygen = if (wantsDive) max(0f, prevDive.oxygen - dt * (if (overrideActive) 15f else 25f))
-        else min(100f, prevDive.oxygen + dt * (if (overrideActive) 45f else 15f))
+        val oxygen = if (wantsDive) max(0f, prevDive.oxygen - dt * 25f)
+        else min(100f, prevDive.oxygen + dt * 15f)
         val submerged = wantsDive && oxygen > 0f
         if (submerged && !prevDive.submerged) events += GameEvent.Tone(160f, 0.3f, 0.3f)
         val ranOut = prevDive.submerged && !submerged && input.diveHeld
@@ -151,8 +129,8 @@ object GameSimulation {
         val lockedOut = input.diveHeld && (prevDive.lockedOut || ranOut)
         val dive = DiveState(submerged = submerged, oxygen = oxygen, lockedOut = lockedOut)
 
-        // --- Speed: throttle, vessel, override
-        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed * (if (overrideActive) 1.35f else 1f)
+        // --- Speed: throttle, vessel
+        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed
         val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
@@ -161,18 +139,13 @@ object GameSimulation {
         var pingActive = prev.sonar.active
         var pingRadius = prev.sonar.radius
         if (charges < maxSonarCharges(modules)) {
-            regen += dt * (if (overrideActive) 6f else 1f)
+            regen += dt
             if (regen >= sonarRegenSeconds(modules)) {
                 charges++
                 regen = 0f
             }
         } else {
             regen = 0f
-        }
-        if (overrideActive && charges > 0 && !pingActive) {
-            charges--
-            pingActive = true
-            pingRadius = 0f
         }
         if (pingActive) {
             val oldRadius = pingRadius
@@ -193,7 +166,7 @@ object GameSimulation {
         if (hiding) stealth *= 0.2f
         if (submerged) stealth *= 0.1f
         val boostAccumulation = if (throttle > 0.6f) (throttle - 0.6f) * 0.3f else 0f
-        val accumulation = (0.035f * sector.threat + prev.activePursuers * 0.02f + boostAccumulation + (if (overrideActive) 0.03f else 0f)) * stealth
+        val accumulation = (0.035f * sector.threat + prev.activePursuers * 0.02f + boostAccumulation) * stealth
         val decay = when {
             submerged -> 0.30f + modules.stealth * 0.05f
             silent -> 0.16f + modules.stealth * 0.04f
@@ -528,7 +501,6 @@ object GameSimulation {
             speedFactor = speedFactor,
             dive = dive,
             sonar = sonar,
-            power = power,
             flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt)),
             comboCounter = combo,
             comboMultiplier = comboMultiplier,

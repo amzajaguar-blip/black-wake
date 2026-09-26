@@ -156,7 +156,6 @@ fun BriefingScreen(state: GameState, viewModel: GameViewModel) {
                     ControlLine("IMMERGI (tieni)", "passa sotto relitti e barche; consuma ossigeno")
                     ControlLine("SONAR", "rivela i pericoli anche nella nebbia")
                     ControlLine("RAZZO", "acceca gli inseguitori")
-                    ControlLine("OVERRIDE", "più veloce, consuma batteria")
                 }
               }
               // Pinned: the primary action must never sit below the fold.

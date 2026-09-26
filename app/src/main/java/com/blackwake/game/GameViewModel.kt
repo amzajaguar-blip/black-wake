@@ -142,8 +142,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchFlare() = updateRun(GameSimulation::launchFlare)
 
-    fun toggleOverride() = updateRun(GameSimulation::toggleOverride)
-
     // --- Garage and settings
 
     fun buyModule(id: String) {

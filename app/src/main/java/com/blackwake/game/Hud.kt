@@ -271,24 +271,14 @@ private fun ActionPad(run: RunState, viewModel: GameViewModel, modifier: Modifie
                 active = flare.timer > 0f,
                 onClick = viewModel::launchFlare
             )
-            val power = run.power
-            ActionButton(
-                title = "OVERRIDE",
-                detail = "${power.battery.toInt()}%",
-                color = Palette.Red,
-                enabled = power.overrideActive || power.battery >= 10f,
-                active = power.overrideActive,
-                fraction = power.battery / 100f,
-                onClick = viewModel::toggleOverride
-            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sonar = run.sonar
             ActionButton(
                 title = "SONAR",
-                detail = if (run.power.overrideActive) "AUTO" else "x${sonar.charges}",
+                detail = "x${sonar.charges}",
                 color = Palette.Cyan,
-                enabled = sonar.charges > 0 && !sonar.active && !run.power.overrideActive,
+                enabled = sonar.charges > 0 && !sonar.active,
                 active = sonar.active,
                 onClick = viewModel::triggerSonar
             )

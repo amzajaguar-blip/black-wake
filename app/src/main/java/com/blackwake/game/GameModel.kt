@@ -91,11 +91,6 @@ data class SonarState(
     val radius: Float = 0f
 )
 
-data class PowerState(
-    val overrideActive: Boolean = false,
-    val battery: Float = 100f
-)
-
 data class FlareState(
     val charges: Int = 3,
     val timer: Float = 0f
@@ -129,7 +124,6 @@ data class RunState(
 
     val dive: DiveState = DiveState(),
     val sonar: SonarState = SonarState(),
-    val power: PowerState = PowerState(),
     val flare: FlareState = FlareState(),
 
     val comboCounter: Int = 0,

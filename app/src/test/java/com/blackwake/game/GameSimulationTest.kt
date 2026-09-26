@@ -43,7 +43,6 @@ class GameSimulationTest {
         assertEquals(100f, run.hull, 0f)
         assertEquals(100f, run.dive.oxygen, 0f)
         assertEquals(3, run.flare.charges)
-        assertTrue(run.compartments.none { it.breached || it.sealed })
         assertTrue(run.entities.isEmpty() && run.pursuers.isEmpty())
         assertEquals(GameSimulation.maxSonarCharges(progress.modules), run.sonar.charges)
     }
@@ -150,13 +149,19 @@ class GameSimulationTest {
     }
 
     @Test
-    fun sealingABreachStopsFlooding() {
-        val breached = DEFAULT_COMPARTMENTS.map { if (it.id == "BOW") it.copy(breached = true) else it }
-        val flooding = simulate(quietRun().copy(compartments = breached), 1f)
-        assertEquals(97.5f, flooding.hull, 0.3f)
-
-        val sealed = simulate(GameSimulation.toggleSeal(quietRun().copy(compartments = breached), "BOW"), 1f)
-        assertEquals(100f, sealed.hull, 0.01f)
+    fun hazardHitCostsHullOnceWithNoLingeringDrain() {
+        var run = quietRun()
+        val wreck = Entity(id = 1, type = EntityType.WRECK, lane = 1, x = run.playerX, z = 1f)
+        run = run.copy(entities = listOf(wreck))
+        repeat(60) {
+            if (run.hull == run.maxHull) run = step(run).run
+        }
+        assertTrue("wreck must hit the hull", run.hull < run.maxHull)
+        val hullAfterHit = run.hull
+        val after = simulate(run.copy(entities = emptyList()), 3f)
+        assertTrue(after.fuel > 0f)
+        assertFalse(after.dive.submerged)
+        assertEquals(hullAfterHit, after.hull, 0.01f)
     }
 
     @Test

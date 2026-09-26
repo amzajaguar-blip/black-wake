@@ -64,7 +64,6 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
             verticalAlignment = Alignment.Bottom
         ) {
             ThrottleLever(run, onChange = viewModel::setThrottle)
-            BulkheadPanel(run, onToggle = viewModel::toggleSeal)
         }
         ActionPad(run, viewModel, Modifier.align(Alignment.BottomEnd))
         if (BuildConfig.DEBUG) {
@@ -260,39 +259,6 @@ private fun ThrottleLever(run: RunState, onChange: (Float) -> Unit) {
             }
         }
         Label("${(throttle * 100).toInt()}%", color, 9.sp, Modifier.padding(top = 2.dp))
-    }
-}
-
-@Composable
-private fun BulkheadPanel(run: RunState, onToggle: (String) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        val anyFlooding = run.compartments.any { it.flooding }
-        Label("PARATIE", if (anyFlooding) Palette.Red.copy(alpha = blink(run.runElapsed, 10f)) else Palette.Muted, 9.sp)
-        for (c in run.compartments) {
-            val color = when {
-                c.flooding -> Palette.Red.copy(alpha = blink(run.runElapsed, 12f))
-                c.sealed -> Palette.Amber
-                else -> Palette.Dim
-            }
-            val status = when {
-                c.flooding -> "falla aperta"
-                c.sealed && c.breached -> "falla sigillata"
-                c.sealed -> "sigillato"
-                else -> "integro"
-            }
-            Box(
-                Modifier
-                    .width(52.dp)
-                    .height(30.dp)
-                    .background(if (c.sealed || c.flooding) color.copy(alpha = 0.18f) else Palette.Panel)
-                    .border(1.dp, color)
-                    .clickable(role = Role.Button) { onToggle(c.id) }
-                    .semantics { contentDescription = "${c.name}: $status" },
-                contentAlignment = Alignment.Center
-            ) {
-                Label(if (c.sealed) "▣ ${c.id}" else c.id, if (c.flooding) Palette.Red else if (c.sealed) Palette.Amber else Palette.Muted, 9.sp)
-            }
-        }
     }
 }
 

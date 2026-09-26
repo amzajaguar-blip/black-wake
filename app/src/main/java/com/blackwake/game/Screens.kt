@@ -157,7 +157,6 @@ fun BriefingScreen(state: GameState, viewModel: GameViewModel) {
                     ControlLine("SONAR", "rivela i pericoli anche nella nebbia")
                     ControlLine("RAZZO", "acceca gli inseguitori")
                     ControlLine("OVERRIDE", "più veloce, consuma batteria")
-                    ControlLine("PARATIE", "sigilla una falla: ferma l'allagamento, rallenta")
                 }
               }
               // Pinned: the primary action must never sit below the fold.

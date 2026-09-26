@@ -144,8 +144,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleOverride() = updateRun(GameSimulation::toggleOverride)
 
-    fun toggleSeal(id: String) = updateRun { GameSimulation.toggleSeal(it, id) to listOf(GameEvent.Tone(300f, 0.08f, 0.25f)) }
-
     // --- Garage and settings
 
     fun buyModule(id: String) {

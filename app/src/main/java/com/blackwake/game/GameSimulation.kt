@@ -108,9 +108,6 @@ object GameSimulation {
             listOf(GameEvent.Tone(if (active) 180f else 120f, 0.25f, 0.35f))
     }
 
-    fun toggleSeal(run: RunState, id: String): RunState =
-        run.copy(compartments = run.compartments.map { if (it.id == id) it.copy(sealed = !it.sealed) else it })
-
     fun step(prev: RunState, chapterIndex: Int, progress: Progress, input: RunInput, dt: Float, rng: Random): StepResult {
         val chapter = CHAPTERS[chapterIndex]
         val sector = chapter.sectors[prev.sectorIndex.coerceIn(0, chapter.sectors.lastIndex)]
@@ -162,9 +159,8 @@ object GameSimulation {
         val pressureAlarm = depth > SAFE_DEPTH
         val dive = DiveState(submerged, oxygen, submergedTimer, depth, seabed, pressureAlarm, lockedOut)
 
-        // --- Speed: throttle, vessel, override, sealed bulkheads
-        val sealedCount = prev.compartments.count { it.sealed }
-        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed * (if (overrideActive) 1.35f else 1f) * (1f - 0.06f * sealedCount)
+        // --- Speed: throttle, vessel, override
+        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed * (if (overrideActive) 1.35f else 1f)
         val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
@@ -221,7 +217,6 @@ object GameSimulation {
         // --- Continuous hull stress
         var hull = prev.hull
         var deathReason = "Lo scafo non regge. La prova resta sotto la marea."
-        var compartments = prev.compartments
         if (fuel <= 0f && invulnerable <= 0f) {
             hull -= 2.3f * dt
             deathReason = "Senza carburante il mare entra nello scafo."
@@ -236,25 +231,6 @@ object GameSimulation {
                 pressureBeep = 1f
             }
         }
-        val flooding = compartments.count { it.flooding }
-        var floodBeep = prev.floodBeepTimer - dt
-        if (flooding > 0) {
-            hull -= flooding * 2.5f * dt
-            deathReason = "I compartimenti allagati trascinano lo scafo sotto."
-            if (floodBeep <= 0f) {
-                events += GameEvent.Tone(400f, 0.1f, 0.3f)
-                floodBeep = 2f
-            }
-        }
-
-        fun breachRandom() {
-            val intact = compartments.filter { !it.breached }
-            if (intact.isEmpty()) return
-            val target = intact[rng.nextInt(intact.size)]
-            compartments = compartments.map { if (it.id == target.id) it.copy(breached = true) else it }
-            say("FALLA: ${target.name} // SIGILLA LA PARATIA", MessageTone.DANGER)
-        }
-
         // --- Player movement: magnetic lanes with inertia
         val drag = input.dragTargetX
         val nearestLane = round(prev.playerX).coerceIn(-1f, 1f)
@@ -292,7 +268,6 @@ object GameSimulation {
                     hull -= max(4f, PursuerAI.spec(next.type).ramDamage - modules.hull * 2f)
                     deathReason = "Speronato da ${enemyLabel(next.type)}. La prova affonda con te."
                     invulnerable = 1.2f
-                    if (rng.nextBoolean()) breachRandom()
                     cameraShake = max(cameraShake, 0.8f)
                     flash(FlashKind.DAMAGE, 1f)
                     velocityX = (if (playerX >= next.x) 1f else -1f) * 12f
@@ -439,7 +414,6 @@ object GameSimulation {
                             hull -= damage
                             deathReason = if (e.type == EntityType.MINE) "Una mina apre lo scafo in due." else "Il relitto squarcia lo scafo."
                             invulnerable = 0.86f
-                            if (damage > 10f) breachRandom()
                             velocityX = (if (playerX > e.x) 1f else -1f) * 15f
                             cameraShake = max(cameraShake, 1f)
                             flash(FlashKind.DAMAGE, 1f)
@@ -459,7 +433,6 @@ object GameSimulation {
                             hull -= damage
                             deathReason = "Black Tide ha chiuso la rotta."
                             invulnerable = 0.86f
-                            if (damage > 10f && rng.nextBoolean()) breachRandom()
                             velocityX = (if (playerX > e.x) 1f else -1f) * 12f
                             cameraShake = max(cameraShake, 0.8f)
                             flash(FlashKind.DAMAGE, 1f)
@@ -575,7 +548,6 @@ object GameSimulation {
             sonar = sonar,
             power = power,
             flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt)),
-            compartments = compartments,
             comboCounter = combo,
             comboMultiplier = comboMultiplier,
             cameraShake = cameraShake,
@@ -584,7 +556,6 @@ object GameSimulation {
             forkSpawned = forkSpawned,
             forkNotice = forkNotice,
             proximityPingTimer = proximityPing,
-            floodBeepTimer = max(0f, floodBeep),
             pressureBeepTimer = max(0f, pressureBeep),
             entities = entities.sortedByDescending { it.z },
             pursuers = pursuers,

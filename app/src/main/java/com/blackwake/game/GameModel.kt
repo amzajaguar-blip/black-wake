@@ -68,22 +68,6 @@ data class Pursuer(
     val isActive: Boolean get() = state != PursuerState.LOST_TARGET
 }
 
-data class Compartment(
-    val id: String,
-    val name: String,
-    val breached: Boolean = false,
-    val sealed: Boolean = false
-) {
-    val flooding: Boolean get() = breached && !sealed
-}
-
-val DEFAULT_COMPARTMENTS = listOf(
-    Compartment("BOW", "PRUA"),
-    Compartment("MID", "CENTRO"),
-    Compartment("AFT", "POPPA"),
-    Compartment("ENG", "MOTORI")
-)
-
 data class TerminalMessage(val text: String, val tone: MessageTone, val timestamp: Float)
 
 data class HudMessage(val text: String, val tone: MessageTone, val timer: Float)
@@ -151,7 +135,6 @@ data class RunState(
     val sonar: SonarState = SonarState(),
     val power: PowerState = PowerState(),
     val flare: FlareState = FlareState(),
-    val compartments: List<Compartment> = DEFAULT_COMPARTMENTS,
 
     val comboCounter: Int = 0,
     val comboMultiplier: Int = 1,
@@ -163,7 +146,6 @@ data class RunState(
     val forkSpawned: Boolean = false,
     val forkNotice: ForkNotice? = null,
     val proximityPingTimer: Float = 0f,
-    val floodBeepTimer: Float = 0f,
     val pressureBeepTimer: Float = 0f,
 
     val entities: List<Entity> = emptyList(),

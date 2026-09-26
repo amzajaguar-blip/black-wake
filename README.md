@@ -38,7 +38,6 @@ installazione di Gradle di sistema.
 | SONAR | Rivela i pericoli, anche nella nebbia dell'inseguimento |
 | RAZZO | Acceca gli inseguitori e li fa perdere il contatto |
 | OVERRIDE | Più velocità e sonar automatico, consuma la batteria |
-| PARATIE | Sigilla una falla: ferma l'allagamento, riduce la velocità |
 | Pausa / tasto indietro | Sospende la missione, mappa tattica e registro di bordo |
 
 **Obiettivo di ogni capitolo:** raccogliere almeno il 70% dell'intel prima che si chiuda la finestra

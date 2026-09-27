@@ -1,8 +1,10 @@
 package com.blackwake.game
 
+import java.util.ArrayDeque
 import java.util.Locale
 import java.util.TreeMap
 import kotlin.math.abs
+import kotlin.math.round
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -12,44 +14,70 @@ import org.junit.runners.MethodSorters
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class SoakTest {
-    private enum class Policy { CAUTIOUS, RECKLESS }
+    private enum class Policy { CAUTIOUS, BALANCED, RECKLESS }
 
     private class Bot {
-        // Keep the commanded lane as memory; the cross-version observation surface
-        // deliberately does not expose the boat's lateral position to the bot.
-        private var lane = 1
+        private var previousZ = emptyMap<Int, Float>()
 
         fun choose(run: RunState): Decision {
-            val canDive = run.dive.oxygen >= 15f && !run.dive.lockedOut
-            val scores = IntArray(3)
-            val unsafe = BooleanArray(3)
+            val currentLane = round(run.playerX).toInt().coerceIn(-1, 1) + 1
+            val diveAvailable = !run.dive.lockedOut &&
+                (run.dive.oxygen >= 15f || (run.dive.submerged && run.dive.oxygen > 0f))
+            var speed = 25f
             for (entity in run.entities) {
-                if (entity.z < 0f || entity.z > 35f || entity.lane !in 0..2) continue
+                val oldZ = previousZ[entity.id] ?: continue
+                val measured = (oldZ - entity.z) / FRAME
+                if (measured > 0f && measured.isFinite()) {
+                    speed = measured
+                    break
+                }
+            }
+            previousZ = run.entities.associate { it.id to it.z }
+            val scores = IntArray(3)
+            val blocked = BooleanArray(3)
+            val nearBlocked = BooleanArray(3)
+            val feasible = HashSet<Int>()
+            for (entity in run.entities) {
+                if (entity.z <= -5f || entity.z > 35f || entity.lane !in 0..2) continue
+                val arrival = (entity.z + 5f) / speed
+                val canDiveByArrival = diveAvailable ||
+                    (!run.dive.submerged && (!run.dive.lockedOut || arrival > FRAME) &&
+                        run.dive.oxygen + 15f * arrival >= 15f)
+                val diveFeasible = canDiveByArrival && run.dive.oxygen - 25f * arrival >= 2f
                 when (entity.type) {
-                    EntityType.MINE -> { unsafe[entity.lane] = true; scores[entity.lane] -= 100 }
-                    EntityType.WRECK, EntityType.ENEMY -> if (!canDive) {
-                        unsafe[entity.lane] = true
-                        scores[entity.lane] -= 100
+                    EntityType.MINE -> {
+                        blocked[entity.lane] = true
+                        if (entity.z <= 20f) nearBlocked[entity.lane] = true
                     }
-                    EntityType.INTEL, EntityType.FUEL -> scores[entity.lane] += 1
+                    EntityType.WRECK, EntityType.ENEMY -> if (diveFeasible) {
+                        feasible += entity.id
+                        scores[entity.lane] -= 50
+                    } else {
+                        blocked[entity.lane] = true
+                        if (entity.z <= 20f) nearBlocked[entity.lane] = true
+                    }
+                    EntityType.INTEL -> scores[entity.lane] += 10
+                    EntityType.FUEL -> scores[entity.lane] += if (run.fuel < 40f) 40 else 10
                     else -> Unit
                 }
             }
-            val noSafeLane = unsafe.all { it }
-            var best = lane
+            var best = currentLane
             for (candidate in 0..2) {
-                if (scores[candidate] > scores[best]) best = candidate
+                if (!blocked[candidate] && (blocked[best] || scores[candidate] > scores[best])) best = candidate
             }
-            lane = best
+            // atBow tests post-move z in (-4, 2). At FRAME and speed <= 60,
+            // pre-step z > -5 covers its trailing edge; z <= 6 covers its leading edge.
             val closeDiveHazard = run.entities.any {
-                it.lane == lane && it.z >= 0f && it.z <= 6f &&
+                abs(it.x - run.playerX) < GameSimulation.HAZARD_HIT && it.z > -5f && it.z <= 6f &&
                     (it.type == EntityType.WRECK || it.type == EntityType.ENEMY)
             }
             val imminentRam = run.pursuers.any {
-                PursuerAI.canRam(it) && abs(it.y - GameSimulation.PLAYER_Y) <= 8f
+                PursuerAI.canRam(it) && abs(it.y - GameSimulation.PLAYER_Y) < 8f &&
+                    abs(it.x - run.playerX) < GameSimulation.RAM_HIT + 0.2f
             }
             val flare = run.pursuers.any { it.state == PursuerState.INTERCEPT }
-            return Decision(lane - 1f, (canDive && closeDiveHazard) || imminentRam, flare, noSafeLane)
+            return Decision(best - 1f, diveAvailable && (closeDiveHazard || imminentRam),
+                flare, nearBlocked.all { it }, feasible)
         }
     }
 
@@ -57,7 +85,8 @@ class SoakTest {
         val dragTargetX: Float,
         val diveHeld: Boolean,
         val flare: Boolean,
-        val noSafeLane: Boolean
+        val allLanesBlocked: Boolean,
+        val feasibleDiveIds: Set<Int>
     )
 
     private class Metrics {
@@ -68,7 +97,10 @@ class SoakTest {
         var completedRuns = 0
         var completedSeconds = 0.0
         var hullDamage = 0.0
+        var allLanesBlockedFrames = 0
         var forcedHits = 0
+        var botErrorHits = 0
+        var plannedDiveFailures = 0
         var bandViolations = 0
         var waveEvents = 0
         var blockedWaveGaps = 0
@@ -77,6 +109,8 @@ class SoakTest {
         var pings = 0
         var huntedSeconds = 0.0
         var activeHuntedSeconds = 0.0
+        var elapsedSeconds = 0.0
+        var pursuersSpawned = 0
 
         fun add(other: Metrics) {
             runs += other.runs
@@ -88,7 +122,10 @@ class SoakTest {
             completedRuns += other.completedRuns
             completedSeconds += other.completedSeconds
             hullDamage += other.hullDamage
+            allLanesBlockedFrames += other.allLanesBlockedFrames
             forcedHits += other.forcedHits
+            botErrorHits += other.botErrorHits
+            plannedDiveFailures += other.plannedDiveFailures
             bandViolations += other.bandViolations
             waveEvents += other.waveEvents
             blockedWaveGaps += other.blockedWaveGaps
@@ -97,6 +134,8 @@ class SoakTest {
             pings += other.pings
             huntedSeconds += other.huntedSeconds
             activeHuntedSeconds += other.activeHuntedSeconds
+            elapsedSeconds += other.elapsedSeconds
+            pursuersSpawned += other.pursuersSpawned
         }
 
         fun row(policy: Policy, chapter: Int, minutes: Int): String {
@@ -107,19 +146,22 @@ class SoakTest {
             val damagePerMinute = hullDamage / minutes
             val pingsPerHuntedMinute = if (huntedSeconds == 0.0) 0.0 else pings * 60.0 / huntedSeconds
             val activeFraction = if (huntedSeconds == 0.0) 0.0 else activeHuntedSeconds / huntedSeconds
+            val huntedFraction = if (elapsedSeconds == 0.0) 0.0 else huntedSeconds / elapsedSeconds
             return listOf(
                 policy.name, chapter.toString(), runs.toString(), wins.toString(), deaths.toString(),
-                reasons, decimal(mean), decimal(damagePerMinute), forcedHits.toString(),
+                reasons, decimal(mean), decimal(damagePerMinute), allLanesBlockedFrames.toString(),
+                forcedHits.toString(), botErrorHits.toString(), plannedDiveFailures.toString(),
                 bandViolations.toString(), waveEvents.toString(), blockedWaveGaps.toString(),
                 freeLaneFallbacks.toString(), submergedRams.toString(),
-                decimal(pingsPerHuntedMinute), decimal(activeFraction)
+                decimal(pingsPerHuntedMinute), decimal(activeFraction), decimal(huntedFraction),
+                pursuersSpawned.toString()
             ).joinToString("|")
         }
     }
 
     @Test
     fun aSeededSoakReportsBaseline() {
-        val rows = ArrayList<String>(16)
+        val rows = ArrayList<String>(24)
         var firstScenarioRow = ""
         for (policy in Policy.entries) {
             for (chapter in 0..7) {
@@ -139,7 +181,7 @@ class SoakTest {
             firstScenarioRow,
             scenario(1, 0, Policy.CAUTIOUS).row(Policy.CAUTIOUS, 0, SIM_MINUTES)
         )
-        println("SOAK label=${SoakAdapter.LABEL} sim-minutes-per-chapter=$SIM_MINUTES seeds=1,2,3,4,5 columns=policy|chapter|runs|wins|deaths|death-reasons|mean-run-seconds|hull-damage-per-minute|forced-hits|band-violation-steps|wave-events|blocked-wave-gaps|freeLane-fallbacks|submerged-rams|pings-per-hunted-minute|ping-active-fraction")
+        println("SOAK label=${SoakAdapter.LABEL} bot=v2 sim-minutes-per-chapter=$SIM_MINUTES seeds=1,2,3,4,5 columns=policy|chapter|runs|wins|deaths|death-reasons|mean-run-seconds|hull-damage-per-minute|all-lanes-blocked-frames|forced-hits|bot-error-hits|planned-dive-failures|band-violation-steps|wave-events|blocked-wave-gaps|freeLane-fallbacks|submerged-rams|pings-per-hunted-minute|ping-active-fraction|hunted-fraction|pursuers-spawned")
         rows.forEach(::println)
     }
 
@@ -190,20 +232,76 @@ class SoakTest {
         }
     }
 
+    @Test
+    fun botDivesThroughTheWholeWindow() {
+        // The closest existing sector threats to 0.3, 0.6 and 1.0 are
+        // 0.30, 0.59 and 0.99. Keep the boat in the wreck's lane to isolate
+        // the dive command from the lane-selection policy.
+        val cases = listOf(Triple(0, 0, 0.30f), Triple(3, 0, 0.59f), Triple(6, 1, 0.99f))
+        for ((chapter, sector, threat) in cases) {
+            val progress = Progress()
+            val rng = Random(303 + chapter)
+            val wreck = Entity(1, EntityType.WRECK, 1, 0f, 20f)
+            var run = GameSimulation.newRun(chapter, progress).copy(
+                sectorIndex = sector, tutorialStep = 5, spawnClock = 1000f,
+                entities = listOf(wreck), nextId = 2
+            )
+            val bot = Bot()
+            var windowFrames = 0
+            var submergedFrames = 0
+            repeat(120) { frame ->
+                val decision = bot.choose(run)
+                val inWindow = run.entities.any {
+                    it.id == wreck.id && it.z > -5f && it.z <= 6f
+                }
+                val result = GameSimulation.step(run, chapter, progress,
+                    RunInput(dragTargetX = 0f, diveHeld = decision.diveHeld), FRAME, rng)
+                val after = SoakAdapter.afterStep(result.run)
+                checkState(after) { "dive window threat $threat frame $frame" }
+                if (inWindow) {
+                    windowFrames++
+                    if (after.dive.submerged) submergedFrames++
+                    assertTrue("dive released at threat $threat frame $frame", after.dive.submerged)
+                }
+                run = after
+            }
+            assertTrue("wreck never entered the window at threat $threat", windowFrames > 0)
+            assertEquals("wreck damaged hull at threat $threat", run.maxHull, run.hull, 0f)
+            println("DIVE-WINDOW threat=$threat submerged-frames=$submergedFrames window-frames=$windowFrames hits=0")
+        }
+    }
+
     private fun scenario(seed: Int, chapter: Int, policy: Policy): Metrics {
         val progress = Progress()
         val rng = Random(seed)
         var bot = Bot()
         val metrics = Metrics()
         var run = GameSimulation.newRun(chapter, progress)
-        var noSafeFrames = 0
+        val blockedHistory = ArrayDeque<Boolean>()
+        var blockedInWindow = 0
+        var quietThrottle = false
         val frames = SIM_MINUTES * 60 * FRAMES_PER_SECOND
         repeat(frames) { frame ->
             val decision = bot.choose(run)
-            noSafeFrames = if (decision.noSafeLane) noSafeFrames + 1 else 0
+            blockedHistory.addLast(decision.allLanesBlocked)
+            if (decision.allLanesBlocked) {
+                blockedInWindow++
+                metrics.allLanesBlockedFrames++
+            }
+            if (blockedHistory.size > FRAMES_PER_SECOND / 2 && blockedHistory.removeFirst()) {
+                blockedInWindow--
+            }
+            val lowThreshold = if (policy == Policy.CAUTIOUS) 0.3f else 0.5f
+            val highThreshold = if (policy == Policy.CAUTIOUS) 0.6f else 0.85f
+            if (run.detection > highThreshold) quietThrottle = true
+            if (run.detection < lowThreshold) quietThrottle = false
+            val throttle = when (policy) {
+                Policy.RECKLESS -> 1f
+                Policy.CAUTIOUS -> if (quietThrottle) 0.1f else 0.5f
+                Policy.BALANCED -> if (quietThrottle) 0.1f else 0.75f
+            }
             var before = GameSimulation.setThrottle(
-                run,
-                if (policy == Policy.RECKLESS) 1f else if (run.detection > 0.6f) 0.1f else 0.5f
+                run, throttle
             )
             if (decision.flare) before = GameSimulation.launchFlare(before).first
             val result = GameSimulation.step(
@@ -214,14 +312,25 @@ class SoakTest {
             checkState(after) { "seed $seed chapter $chapter $policy frame $frame" }
             val loss = (before.hull - after.hull).coerceAtLeast(0f)
             metrics.hullDamage += loss
-            if (loss > 1f && noSafeFrames >= 30) metrics.forcedHits++
+            val ramHit = loss > 1f && probableRamTransition(before, after)
+            val hitEntity = if (loss > 1f && !ramHit) before.entities.firstOrNull { entity ->
+                isHazard(entity.type) && entity.z > -5f && entity.z <= 6f &&
+                    abs(entity.x - after.playerX) < GameSimulation.HAZARD_HIT &&
+                    after.entities.none { it.id == entity.id }
+            } else null
+            if (hitEntity != null) {
+                if (blockedInWindow > 0) metrics.forcedHits++ else metrics.botErrorHits++
+                if ((hitEntity.type == EntityType.WRECK || hitEntity.type == EntityType.ENEMY) &&
+                    decision.diveHeld && hitEntity.id in decision.feasibleDiveIds
+                ) metrics.plannedDiveFailures++
+            }
             if (hasBandViolation(after.entities)) metrics.bandViolations++
-            countSpawns(before.entities, after.entities, metrics)
-            if (loss > 1f && after.dive.submerged && probableRamTransition(before, after, decision.dragTargetX)) {
+            countSpawns(before, after, metrics)
+            if (ramHit && after.dive.submerged) {
                 metrics.submergedRams++
             }
-            val hunted = before.pursuers.any { it.state == PursuerState.PURSUIT || it.state == PursuerState.INTERCEPT }
-            if (hunted) {
+            metrics.elapsedSeconds += FRAME
+            if (before.hunted) {
                 metrics.huntedSeconds += FRAME
                 if (after.sonar.active) metrics.activeHuntedSeconds += FRAME
                 if (!before.sonar.active && after.sonar.active) metrics.pings++
@@ -239,12 +348,15 @@ class SoakTest {
                     run = GameSimulation.newRun(chapter, progress)
                     bot = Bot()
                     metrics.runs++
-                    noSafeFrames = 0
+                    blockedHistory.clear()
+                    blockedInWindow = 0
+                    quietThrottle = false
                 }
             } else {
                 run = after
             }
         }
+        assertEquals("planned dive failure in seed $seed chapter $chapter $policy", 0, metrics.plannedDiveFailures)
         return metrics
     }
 
@@ -256,7 +368,8 @@ class SoakTest {
             throw AssertionError("non-finite state at ${context()}")
         }
         if (run.maxHull < 0f || run.hull < 0f || run.hull > run.maxHull ||
-            run.detection !in 0f..1f || run.fuel !in 0f..100f || run.dive.oxygen !in 0f..100f
+            run.detection !in 0f..1f || run.fuel !in 0f..100f || run.dive.oxygen !in 0f..100f ||
+            run.playerX !in -1.15f..1.15f || run.entities.any { it.z !in -12f..120f }
         ) {
             throw AssertionError("state outside allowed range at ${context()}")
         }
@@ -276,12 +389,13 @@ class SoakTest {
         return false
     }
 
-    private fun countSpawns(before: List<Entity>, after: List<Entity>, metrics: Metrics) {
+    private fun countSpawns(before: RunState, after: RunState, metrics: Metrics) {
         var waveLanes = 0
         var waveZ = 0f
         var waveCount = 0
-        for (entity in after) {
-            if (!isNew(entity, before)) continue
+        metrics.pursuersSpawned += after.pursuers.count { it.id >= before.nextId }
+        for (entity in after.entities) {
+            if (entity.id < before.nextId) continue
             if (entity.type == EntityType.ENEMY && entity.z in 65f..75f && entity.lane in 0..2) {
                 waveLanes = waveLanes or (1 shl entity.lane)
                 waveZ += entity.z
@@ -289,8 +403,8 @@ class SoakTest {
             }
             if (entity.z in 95f..114f && entity.type != EntityType.FORK) {
                 var occupied = 0
-                for (other in after) {
-                    if (other !== entity && !isNew(other, before) && other.lane in 0..2 &&
+                for (other in after.entities) {
+                    if (other.id < entity.id && other.lane in 0..2 &&
                         abs(other.z - entity.z) < 10f
                     ) occupied = occupied or (1 shl other.lane)
                 }
@@ -301,23 +415,18 @@ class SoakTest {
             metrics.waveEvents++
             val gap = (0..2).first { waveLanes and (1 shl it) == 0 }
             val center = waveZ / 2f
-            if (after.any { isHazard(it.type) && it.lane == gap && abs(it.z - center) <= 14f }) {
+            if (after.entities.any { isHazard(it.type) && it.lane == gap && abs(it.z - center) <= 14f }) {
                 metrics.blockedWaveGaps++
             }
         }
     }
 
-    private fun isNew(entity: Entity, before: List<Entity>): Boolean = before.none {
-        it.type == entity.type && it.lane == entity.lane && it.x == entity.x &&
-            it.z >= entity.z && it.z - entity.z < 2f
-    }
-
-    private fun probableRamTransition(before: RunState, after: RunState, commandedX: Float): Boolean =
+    private fun probableRamTransition(before: RunState, after: RunState): Boolean =
         before.pursuers.any { old ->
-            PursuerAI.canRam(old) && abs(old.y - GameSimulation.PLAYER_Y) < 6f &&
-                abs(old.x - commandedX) < GameSimulation.HAZARD_HIT &&
+            PursuerAI.canRam(old) && abs(old.y - GameSimulation.PLAYER_Y) < 8f &&
+                abs(old.x - after.playerX) < GameSimulation.RAM_HIT + 0.2f &&
                 after.pursuers.any { next ->
-                    next.state == PursuerState.PURSUIT && abs(next.x - old.x) < 2f &&
+                    next.id == old.id && next.state == PursuerState.PURSUIT &&
                         abs(next.y - old.y) < 2f
                 }
         }

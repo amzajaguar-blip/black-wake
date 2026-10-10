@@ -25,10 +25,6 @@ enum class EntityType {
     INTEL, FUEL, WRECK, MINE, ENEMY, FORK
 }
 
-enum class PlayerBoatType {
-    SPEEDBOAT, RACING, PATROL, SMUGGLER, STEALTH, ARMORED
-}
-
 enum class EnemyBoatType {
     PATROL, INTERCEPTOR, POLICE, HUNTER, ARMORED, ELITE
 }
@@ -83,7 +79,6 @@ data class TerminalMessage(val text: String, val color: String, val timestamp: F
 
 data class GameState(
     val mode: GameMode = GameMode.MENU,
-    val playerBoatType: PlayerBoatType = PlayerBoatType.SPEEDBOAT,
     val currentChapterIndex: Int = 0,
     val unlockedChapterCount: Int = 1,
     val sectorIndex: Int = 0,
@@ -312,7 +307,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun buyModule(id: String) {
         _uiState.update { state ->
             val modValue = when(id) {
-                "engine" -> state.modules.engine
                 "hull" -> state.modules.hull
                 "tank" -> state.modules.tank
                 "radar" -> state.modules.radar
@@ -324,7 +318,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             if (state.intelBank >= cost) {
                 val newModules = state.modules.copy().apply {
                     when(id) {
-                        "engine" -> engine++
                         "hull" -> hull++
                         "tank" -> tank++
                         "radar" -> radar++
@@ -1127,7 +1120,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishRun(won: Boolean, reason: String) {
         
         val banked = if (won) _uiState.value.intel else (_uiState.value.intel * 0.4).toInt()
-        val nextUnlocked = won && _uiState.value.currentChapterIndex + 1 == _uiState.value.unlockedChapterCount && _uiState.value.currentChapterIndex < CHAPTERS.size - 1
         val newUnlockedCount = if (won) min(CHAPTERS.size, max(_uiState.value.unlockedChapterCount, _uiState.value.currentChapterIndex + 2)) else _uiState.value.unlockedChapterCount
         
         _uiState.update { it.copy(
@@ -1168,8 +1160,5 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             // Ignore if vibration is not available
         }
-    }
-    fun setPlayerBoat(b: PlayerBoatType) {
-        _uiState.update { it.copy(playerBoatType = b) }
     }
 }

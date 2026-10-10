@@ -644,12 +644,19 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
 
 @Composable
 fun GameCanvas(state: GameState, viewModel: GameViewModel) {
-    // Water effect based on detection (Continuous interpolation)
-    // Biome colors
-    val baseOcean = when (state.currentChapterIndex % 3) {
-        0 -> SeaColor // Deep Blue Ocean
-        1 -> Color(0xFF0F3B3A) // Swamp/Greenish Open Water
-        else -> Color(0xFF140F30) // Night Ocean (Purple-ish Navy)
+    val sector = CHAPTERS.getOrNull(state.currentChapterIndex)
+        ?.sectors
+        ?.getOrNull(state.sectorIndex)
+    val environmentId = sector?.environment ?: EnvironmentId.NIGHT
+    val environmentProfile = EnvironmentRules.forEnvironment(environmentId)
+
+    val baseOcean = when (environmentId) {
+        EnvironmentId.PORT -> Color(0xFF0B3438)
+        EnvironmentId.ISLAND -> Color(0xFF143D45)
+        EnvironmentId.EXTRACT -> Color(0xFF071E35)
+        EnvironmentId.STORM -> Color(0xFF051624)
+        EnvironmentId.DAWN -> Color(0xFF274654)
+        EnvironmentId.NIGHT -> SeaColor
     }
     
     val tensionColor = androidx.compose.ui.graphics.lerp(baseOcean, StormColor, (state.detection / 0.75f).coerceIn(0f, 1f))
@@ -743,7 +750,7 @@ fun GameCanvas(state: GameState, viewModel: GameViewModel) {
                 // Draw Sonar Ping
                 if (state.sonarPingActive) {
                     drawCircle(
-                        color = Cyan.copy(alpha = 1f - (state.sonarPingRadius / 1200f).coerceIn(0f, 1f)),
+                        color = Cyan.copy(alpha = 1f - (state.sonarPingRadius / environmentProfile.sonarRange).coerceIn(0f, 1f)),
                         radius = state.sonarPingRadius,
                         center = Offset(playerCx, playerY),
                         style = Stroke(width = 4f)

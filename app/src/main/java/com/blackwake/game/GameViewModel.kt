@@ -194,7 +194,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 sectorIndex = 0,
                 sectorElapsed = 0f,
                 runElapsed = 0f,
-                tutorialStep = 0,
+                tutorialStep = if (state.unlockedChapterCount > 1) 5 else 0,
                 runSeed = seed,
                 sonarCharges = 1 + state.modules.radar,
                 sonarRegenTimer = 0f,
@@ -381,7 +381,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val boost = effectiveThrottle > 0.8f
         val silent = effectiveThrottle < 0.2f
         val canSubmerge = state.oxygen > 0f
-        val wasO2Critical = state.oxygen < 20f
         val newSubmerged = isDiveHeld && canSubmerge
         val newFlareActiveTimer = kotlin.math.max(0f, state.flareActiveTimer - dt)
         
@@ -693,23 +692,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         var newTutorialStep = state.tutorialStep
 
         if (state.currentChapterIndex == 0 && state.sectorIndex == 0 && newTutorialStep < 5) {
-            // Scripted invisible tutorial
-            if (newSectorElapsed > 1.5f && newTutorialStep == 0) {
+            // First-session scripted onboarding with visible coachmarks.
+            if (newSectorElapsed > 2.0f && newTutorialStep == 0) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.FUEL, 1, 0f, 100f))
                 newTutorialStep = 1
-            } else if (newSectorElapsed > 4.5f && newTutorialStep == 1) {
+            } else if (newSectorElapsed > 5.5f && newTutorialStep == 1) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.INTEL, 2, 1f, 100f))
                 newTutorialStep = 2
-            } else if (newSectorElapsed > 7.5f && newTutorialStep == 2) {
+            } else if (newSectorElapsed > 9.0f && newTutorialStep == 2) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.WRECK, 1, 0f, 100f))
                 newTutorialStep = 3
-            } else if (newSectorElapsed > 11.5f && newTutorialStep == 3) {
+            } else if (newSectorElapsed > 12.0f && newTutorialStep == 3) {
                 // Require boost to get both
                 newEntities.add(Entity(entityIdCounter++, EntityType.FUEL, 0, -1f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.MINE, 1, 0f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.INTEL, 2, 1f, 100f))
                 newTutorialStep = 4
-            } else if (newSectorElapsed > 15.5f && newTutorialStep == 4) {
+            } else if (newSectorElapsed > 15.0f && newTutorialStep == 4) {
                 // Introduce enemies and silent mode
                 newEntities.add(Entity(entityIdCounter++, EntityType.ENEMY, 0, -1f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.ENEMY, 2, 1f, 100f))

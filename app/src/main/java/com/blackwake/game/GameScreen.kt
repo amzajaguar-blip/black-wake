@@ -95,7 +95,7 @@ fun GameScreen(viewModel: GameViewModel) {
             GameMode.MENU -> MainMenu(state, viewModel)
             GameMode.BRIEFING -> BriefingScreen(state, viewModel)
             GameMode.GARAGE -> GarageScreen(state, viewModel)
-            GameMode.PAUSED -> PauseScreen(viewModel)
+            GameMode.PAUSED -> PauseScreen(state, viewModel)
             GameMode.DEBRIEF -> DebriefScreen(state, viewModel)
             else -> {}
         }
@@ -214,13 +214,17 @@ fun GarageScreen(state: GameState, viewModel: GameViewModel) {
 }
 
 @Composable
-fun PauseScreen(viewModel: GameViewModel) {
+fun PauseScreen(state: GameState, viewModel: GameViewModel) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha=0.8f)), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("SOSPENSIONE", color = Color.White, fontSize = 32.sp)
             Spacer(modifier = Modifier.height(24.dp))
             Button(onClick = { viewModel.togglePause() }, colors = ButtonDefaults.buttonColors(containerColor = Cyan)) {
                 Text("RIPRENDI", color = Color.Black)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { viewModel.toggleAudioMute() }) {
+                Text(if (state.isAudioMuted) "AUDIO: OFF" else "AUDIO: ON")
             }
             Spacer(modifier = Modifier.height(8.dp))
             Button(onClick = { viewModel.openMenu() }) {
@@ -343,19 +347,6 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Terminal Feed
-                Box(modifier = Modifier.width(200.dp).height(60.dp).background(Color.Black.copy(alpha=0.6f)).border(1.dp, Cyan.copy(alpha=0.2f)).padding(4.dp)) {
-                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
-                        state.terminalFeed.take(6).reversed().forEach { msg ->
-                            val isCritical = msg.color == "red"
-                            val flashAlpha = if (isCritical) (kotlin.math.sin(state.runElapsed * 15f) * 0.3f + 0.7f).toFloat() else 1f
-                            val tColor = when (msg.color) { "red" -> Red.copy(alpha = flashAlpha); "amber" -> Amber; else -> Cyan }
-                            Text("> ${msg.text}", color = tColor, fontSize = 8.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
                 // Oxygen Bar
                 val o2Critical = state.oxygen < 20f
                 val o2Flash = if (o2Critical) (kotlin.math.sin(state.runElapsed * 15f) * 0.5f + 0.5f).toFloat() else 1f
@@ -396,27 +387,18 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 val hasBreach = state.compartments.any { it.state == CompartmentState.BREACHED }
-                val dcColor = if (hasBreach) Red else Amber
-                val dcFlash = if (hasBreach) (kotlin.math.sin(state.runElapsed * 10f) * 0.5f + 0.5f).toFloat() else 1f
-                Button(
-                    onClick = { viewModel.toggleDamageControl() },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (state.showDamageControl) dcColor.copy(alpha=0.3f) else Color.Black.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.border(1.dp, dcColor.copy(alpha=dcFlash))
-                ) {
-                    Text(if (state.showDamageControl) "CHIUDI PANN." else "CONTROLLO DANNI", color = dcColor.copy(alpha=dcFlash), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                if (hasBreach) {
+                    val dcFlash = (kotlin.math.sin(state.runElapsed * 10f) * 0.5f + 0.5f).toFloat()
+                    Button(
+                        onClick = { viewModel.toggleDamageControl() },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (state.showDamageControl) Red.copy(alpha=0.3f) else Color.Black.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.border(1.dp, Red.copy(alpha=dcFlash))
+                    ) {
+                        Text(if (state.showDamageControl) "CHIUDI DANNI" else "FALLA — RIPARA", color = Red.copy(alpha=dcFlash), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
-                val audioColor = if (state.isAudioMuted) Color.Gray else Cyan
-                Button(
-                    onClick = { viewModel.toggleAudioMute() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.border(1.dp, audioColor)
-                ) {
-                    Text(if (state.isAudioMuted) "AUDIO: OFF" else "AUDIO: ON", color = audioColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(8.dp))
                 val flareActive = state.flareActiveTimer > 0f
                 val flareColor = if (flareActive) Color(0xFFFFFF99) else if (state.flareCharges > 0) Amber else Color.Gray
                 Button(
@@ -440,73 +422,19 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 val batColor = if (state.isEmergencyPowerActive) Red else Cyan
-                val voltage = 21.0f + (state.battery / 100f) * 7.8f
-                
-                Row(modifier = Modifier.width(100.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("PWR CORE", color = batColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Text(String.format(java.util.Locale.US, "%.1fV", voltage), color = batColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                // Linear Voltage Gauge
+                Text("BAT ${state.battery.toInt()}%", color = batColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Box(
                     modifier = Modifier
-                        .size(100.dp, 10.dp)
+                        .size(100.dp, 8.dp)
                         .background(Color.Black.copy(alpha=0.8f))
-                        .border(1.dp, batColor.copy(alpha=0.5f))
+                        .border(1.dp, batColor.copy(alpha=0.6f))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(state.battery / 100f)
-                            .background(batColor.copy(alpha = 0.6f))
+                            .fillMaxWidth((state.battery / 100f).coerceIn(0f, 1f))
+                            .background(batColor.copy(alpha = 0.7f))
                     )
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val tickCount = 4
-                        val step = size.width / tickCount
-                        for (i in 1 until tickCount) {
-                            drawLine(
-                                color = batColor.copy(alpha = 0.8f),
-                                start = Offset(i * step, 0f),
-                                end = Offset(i * step, size.height),
-                                strokeWidth = 1f
-                            )
-                        }
-                    }
-                }
-                
-                // Power Consumption Rate Visualization
-                if (state.batteryHistory.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(if (state.batteryDrainRate > 0) "CONSUMO IN CORSO" else "RICARICA IN CORSO", color = batColor, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                    Box(modifier = Modifier.size(100.dp, 30.dp).background(Color.Black.copy(alpha=0.5f)).border(1.dp, batColor.copy(alpha=0.5f))) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val w = size.width
-                            val h = size.height
-                            val maxPoints = 60
-                            val stepX = w / (maxPoints - 1).toFloat()
-                            val path = androidx.compose.ui.graphics.Path()
-                            
-                            val historySize = state.batteryHistory.size
-                            val padCount = maxPoints - historySize
-                            
-                            for (i in 0 until maxPoints) {
-                                val x = i * stepX
-                                val y: Float
-                                if (i < padCount) {
-                                    y = h - (state.batteryHistory.first() / 100f) * h
-                                } else {
-                                    y = h - (state.batteryHistory[i - padCount] / 100f) * h
-                                }
-                                
-                                if (i == 0) {
-                                    path.moveTo(x, y)
-                                } else {
-                                    path.lineTo(x, y)
-                                }
-                            }
-                            drawPath(path, batColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
-                        }
-                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 
@@ -521,17 +449,7 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                 
                 if (state.pursuers.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("INSEGUITORI: ${state.pursuers.size}", color = Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    state.pursuers.forEach { p ->
-                        val dist = kotlin.math.abs(p.y - 85f).toInt()
-                        val stateName = when (p.state) {
-                            PursuerState.SEARCH -> "SRCH"
-                            PursuerState.INTERCEPT -> "INTC"
-                            PursuerState.LOST_TARGET -> "LOST"
-                            else -> "PRST"
-                        }
-                        Text("${p.type.name} [$stateName] ${dist}m", color = Red, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    }
+                    Text("INSEGUITORI ${state.pursuers.size}", color = Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
                 
                 VisualRadar(state)

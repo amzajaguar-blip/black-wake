@@ -18,7 +18,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 
 enum class GameMode {
-    MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF, PATCHING
+    MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF
 }
 
 enum class EntityType {
@@ -66,15 +66,6 @@ data class Entity(
 enum class CompartmentState { NORMAL, SEALED, BREACHED }
 data class Compartment(val id: String, val name: String, val state: CompartmentState = CompartmentState.NORMAL)
 
-data class LeakNode(
-    val id: Int,
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val fixed: Boolean = false
-)
-
 data class TerminalMessage(val text: String, val color: String, val timestamp: Float)
 
 data class GameState(
@@ -96,7 +87,6 @@ data class GameState(
     val isSubmerged: Boolean = false,
     val oxygen: Float = 100f,
     val showTacticalMap: Boolean = false,
-    val showEventLog: Boolean = false,
     val showDamageControl: Boolean = false,
     val isAudioMuted: Boolean = false,
     val isEmergencyPowerActive: Boolean = false,
@@ -138,8 +128,6 @@ data class GameState(
     val screenFlash: Float = 0f,
     val flashColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Transparent,
     
-    val hasTriggeredPatching: Boolean = false,
-    val leakNodes: List<LeakNode> = emptyList(),
     
     val forkSpawned: Boolean = false,
     val forkNotice: String? = null,
@@ -157,7 +145,6 @@ data class GameState(
     val messageFlash: String? = null,
     val messageColor: String = "cyan",
     val terminalFeed: List<TerminalMessage> = emptyList(),
-    val isGlobalEmergency: Boolean = false,
     
     val isWon: Boolean = false,
     val debriefReason: String = ""
@@ -219,7 +206,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 isSubmerged = false,
                 oxygen = 100f,
                 showTacticalMap = false,
-                showEventLog = false,
                 showDamageControl = false,
                 isEmergencyPowerActive = false,
                 battery = 100f,
@@ -254,12 +240,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 invulnerable = 0f,
                 pursuitCooldown = 0f,
                 pursuers = emptyList(),
-                hasTriggeredPatching = false,
-                leakNodes = emptyList(),
                 proximityPingTimer = 0f,
                 lastDeltaTime = 0f,
                 terminalFeed = emptyList(),
-                isGlobalEmergency = false,
                 isWon = false,
                 debriefReason = "",
                 messageFlash = "CAP. ${chapter.code} // ${sector.title}",
@@ -345,15 +328,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-        fun toggleGlobalEmergency() {
-        _uiState.update { state -> 
-            val newEmergency = !state.isGlobalEmergency
-            SynthAudioEngine.hasSiren = newEmergency
-            state.copy(isGlobalEmergency = newEmergency) 
-        }
-    }
-
-    fun toggleEmergencyPower() {
+        fun toggleEmergencyPower() {
         _uiState.update { 
             if (!it.isEmergencyPowerActive && it.battery <= 0f) {
                 it // Cannot turn on if battery is 0
@@ -393,54 +368,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     
-    fun toggleEventLog() {
-        _uiState.update { it.copy(showEventLog = !it.showEventLog) }
-    }
-
     fun toggleTacticalMap() {
         _uiState.update { it.copy(showTacticalMap = !it.showTacticalMap) }
-    }
-
-    fun patchNode(id: Int) {
-        _uiState.update { state ->
-            if (state.mode != GameMode.PATCHING) return@update state
-            val newNodes = state.leakNodes.map { if (it.id == id) it.copy(fixed = true) else it }
-            SynthAudioEngine.playTone(1200f, 0.1f)
-            
-            var newMode = state.mode
-            var newHull = state.hull
-            if (newNodes.all { it.fixed }) {
-                newMode = GameMode.RUNNING
-                newHull = kotlin.math.min(100f, state.hull + 20f)
-                SynthAudioEngine.playTone(880f, 0.4f)
-            }
-            
-            state.copy(leakNodes = newNodes, mode = newMode, hull = newHull)
-        }
-    }
-    
-    fun updatePatching(dt: Float) {
-        _uiState.update { state ->
-            if (state.mode != GameMode.PATCHING) return@update state
-            
-            val newNodes = state.leakNodes.map { node ->
-                if (node.fixed) {
-                     node
-                } else {
-                     var nx = node.x + node.vx * dt
-                     var ny = node.y + node.vy * dt
-                     var nvx = node.vx
-                     var nvy = node.vy
-                     if (nx < 0.1f || nx > 0.9f) nvx = -nvx
-                     if (ny < 0.1f || ny > 0.9f) nvy = -nvy
-                     nx = nx.coerceIn(0.1f, 0.9f)
-                     ny = ny.coerceIn(0.1f, 0.9f)
-                     node.copy(x = nx, y = ny, vx = nvx, vy = nvy)
-                }
-            }
-            
-            state.copy(leakNodes = newNodes)
-        }
     }
 
     fun updateGame(dt: Float) {
@@ -1066,6 +995,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             finishRun(false, "Lo scafo non regge. La prova resta sotto la marea.")
             return
         }
+
+        SynthAudioEngine.hasSiren = newDetection >= 0.80f || newHull < 25f
 
         _uiState.update { s ->
             s.copy(

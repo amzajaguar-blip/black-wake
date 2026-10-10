@@ -151,7 +151,8 @@ data class GameState(
 )
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
-    private val _uiState = MutableStateFlow(GameState())
+    private val progressionRepository = ProgressionRepository(application)
+    private val _uiState = MutableStateFlow(progressionRepository.load())
     val uiState: StateFlow<GameState> = _uiState.asStateFlow()
 
     init {
@@ -312,6 +313,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 state.copy(messageFlash = "INTEL INSUFFICIENTE", messageColor = "red")
             }
         }
+        progressionRepository.save(_uiState.value)
     }
 
 
@@ -1061,6 +1063,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             bestIntel = max(it.bestIntel, it.intel),
             unlockedChapterCount = newUnlockedCount
         ) }
+        progressionRepository.save(_uiState.value)
     }
 
     private fun flashMessage(msg: String, color: String) {

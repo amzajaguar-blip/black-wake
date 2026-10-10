@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Marea Nera"
+rootProject.name = "Black Wake"
 include(":app")

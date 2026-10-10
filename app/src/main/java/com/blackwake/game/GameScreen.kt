@@ -251,9 +251,27 @@ fun DebriefScreen(state: GameState, viewModel: GameViewModel) {
 
 @Composable
 fun CompassWidget(state: GameState, modifier: Modifier = Modifier) {
-    // Map player velocity and position to a slight heading rotation
-    // Player mostly goes North. Steeling left/right shifts heading slightly.
+    // Map player velocity and position to a slight heading rotation.
     val headingOffset = state.playerVelocityX * 15f + state.playerX * 10f
+    val compassPaint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#2BE7E0")
+            textSize = 30f
+            textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.MONOSPACE
+            isFakeBoldText = true
+        }
+    }
+    val compassPaintSmall = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.LTGRAY
+            textSize = 20f
+            textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+    }
     
     Box(
         modifier = modifier
@@ -270,22 +288,6 @@ fun CompassWidget(state: GameState, modifier: Modifier = Modifier) {
             rotate(degrees = -headingOffset, pivot = Offset(cx, cy)) {
                 // Draw N, E, S, W markings
                 val textRadius = radius * 0.7f
-                val paint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.parseColor("#2BE7E0") // Cyan
-                    textSize = 30f
-                    textAlign = android.graphics.Paint.Align.CENTER
-                    isAntiAlias = true
-                    typeface = android.graphics.Typeface.MONOSPACE
-                    isFakeBoldText = true
-                }
-                val paintSmall = android.graphics.Paint().apply {
-                    color = android.graphics.Color.LTGRAY
-                    textSize = 20f
-                    textAlign = android.graphics.Paint.Align.CENTER
-                    isAntiAlias = true
-                    typeface = android.graphics.Typeface.MONOSPACE
-                }
-                
                 // Draw tick marks
                 for (i in 0 until 360 step 15) {
                     val angleRad = Math.toRadians((i - 90).toDouble())
@@ -306,10 +308,10 @@ fun CompassWidget(state: GameState, modifier: Modifier = Modifier) {
 
                 // We use native canvas for text drawing
                 drawContext.canvas.nativeCanvas.apply {
-                    drawText("N", cx, cy - textRadius + 10f, paint)
-                    drawText("S", cx, cy + textRadius + 10f, paintSmall)
-                    drawText("E", cx + textRadius, cy + 10f, paintSmall)
-                    drawText("W", cx - textRadius, cy + 10f, paintSmall)
+                    drawText("N", cx, cy - textRadius + 10f, compassPaint)
+                    drawText("S", cx, cy + textRadius + 10f, compassPaintSmall)
+                    drawText("E", cx + textRadius, cy + 10f, compassPaintSmall)
+                    drawText("W", cx - textRadius, cy + 10f, compassPaintSmall)
                 }
             }
             
@@ -1319,14 +1321,6 @@ fun VisualRadar(state: GameState) {
                 drawBlip(mapX, mapY, Red, 4f)
             }
             
-            // Fake Noise Blips
-            for (i in 0..3) {
-                val noiseTime = state.runElapsed * 0.2f + i * 13.37f
-                val mapX = kotlin.math.sin(noiseTime * 2.1f).toFloat() * 0.8f
-                val mapY = kotlin.math.cos(noiseTime * 1.7f).toFloat() * 0.8f
-                drawBlip(mapX, mapY, Color.Green, 2f)
-            }
-            
             // Player
             drawCircle(Cyan, radius = 2.dp.toPx(), center = center)
         }
@@ -1338,7 +1332,14 @@ fun VisualRadar(state: GameState) {
 fun MiniNavMap(state: GameState) {
     val chapter = CHAPTERS.getOrNull(state.currentChapterIndex) ?: return
     val currentSector = chapter.sectors.getOrNull(state.sectorIndex) ?: chapter.sectors.last()
-    val distanceLeft = kotlin.math.max(0f, currentSector.duration - state.sectorElapsed)
+    val timeLeft = kotlin.math.max(0f, currentSector.duration - state.sectorElapsed)
+    val routeTextPaint = remember {
+        android.graphics.Paint().apply {
+            textSize = 24f
+            typeface = android.graphics.Typeface.MONOSPACE
+            isAntiAlias = true
+        }
+    }
     
     Box(
         modifier = Modifier
@@ -1351,7 +1352,7 @@ fun MiniNavMap(state: GameState) {
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Text("ROTTA", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Text("DST: ${String.format("%.1f", distanceLeft)}m", color = Amber, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text("T-${String.format("%.1f", timeLeft)}s", color = Amber, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Spacer(modifier = Modifier.height(8.dp))
             
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -1421,17 +1422,15 @@ fun MiniNavMap(state: GameState) {
                             center = Offset(paddingX, startY + index * stepY)
                         )
                         
-                        val textPaint = android.graphics.Paint().apply {
-                            color = android.graphics.Color.parseColor(if (isCurrent) "#FFB45F" else if (isPast) "#2BE7E0" else "#888888")
-                            textSize = 24f
-                            typeface = android.graphics.Typeface.MONOSPACE
-                        }
+                        routeTextPaint.color = android.graphics.Color.parseColor(
+                            if (isCurrent) "#FFB45F" else if (isPast) "#2BE7E0" else "#888888"
+                        )
                         
                         drawContext.canvas.nativeCanvas.drawText(
                             sector.tag.take(6),
                             paddingX + 12.dp.toPx(),
                             startY + index * stepY + 8f,
-                            textPaint
+                            routeTextPaint
                         )
                     }
                 }

@@ -716,7 +716,7 @@ fun GameCanvas(state: GameState, viewModel: GameViewModel) {
     val beamPath = remember { Path() }
     val boatPath = remember { Path() }
     
-    val isHunted = state.pursuers.any { it.state == PursuerState.PURSUIT || it.state == PursuerState.INTERCEPT || it.state == PursuerState.ATTACK }
+    val isHunted = state.pursuers.any { it.state == PursuerState.PURSUIT || it.state == PursuerState.INTERCEPT }
     val huntingFog by animateFloatAsState(
         targetValue = if (isHunted) 1f else 0f,
         animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing),

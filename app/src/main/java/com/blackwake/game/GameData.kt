@@ -45,7 +45,7 @@ val CHAPTERS = listOf(
         maya = "…canale aperto. Se sei quello che penso, non tornare a riva.",
         closer = listOf("BLACK TIDE ha il tuo volto. Ogni porto può essere una trappola.", "Il mare sembra libero. Non lo è."),
         sectors = listOf(
-            createSector("01-open", "ACQUE APERTE", "SEGNATURA BASSA", EnvironmentId.NIGHT, 0.72f, 0.68f, 0.30f, "MAYA: Radar pulito. Non significa sicuro."),
+            createSector("01-open", "ACQUE APERTE", "SEGNATURA BASSA", EnvironmentId.NIGHT, 0.72f, 0.68f, 0.30f, "MAYA: Radar pulito. Non significa sicuro.").copy(duration = 18f),
             createSector("01-salt", "STRETTO DI PORTO", "SCELTA DI ROTTA", EnvironmentId.PORT, 0.88f, 0.56f, 0.48f, "MAYA: Tre passaggi. Uno ti compra tempo.", fork = true),
             createSector("01-wake", "SCIA NERA", "CONTATTO PROBABILE", EnvironmentId.NIGHT, 1.03f, 0.47f, 0.72f, "MAYA: Una luce a tribordo. Tieni il motore basso."),
             createSector("01-uplink", "FINESTRA DI ESTRAZIONE", "TRASMISSIONE IN CORSO", EnvironmentId.EXTRACT, 1.12f, 0.22f, 0.90f, "MAYA: Ora. Trasmetti e resta vivo.", extract = true)

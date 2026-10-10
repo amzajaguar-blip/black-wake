@@ -372,6 +372,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         val chapter = CHAPTERS[state.currentChapterIndex]
         val sector = chapter.sectors[min(state.sectorIndex, chapter.sectors.size - 1)]
+        val environment = EnvironmentRules.forEnvironment(sector.environment)
 
         var newInvulnerable = max(0f, state.invulnerable - dt)
         var newCameraShake = max(0f, state.cameraShake - dt * 3f)
@@ -474,7 +475,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 triggerVibration(longArrayOf(0, 30)) // Short pulse for obstacle
             }
 
-            if (newSonarRadius > 1200f) { // Cover the screen
+            if (newSonarRadius > environment.sonarRange) {
                 newSonarActive = false
                 newSonarRadius = 0f
             }
@@ -504,7 +505,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        val hidingMultiplier = if (isBehindWreck) 0.2f else 1.0f
+        val hidingMultiplier = if (isBehindWreck) environment.wreckCoverMultiplier else 1.0f
         val speedMultiplier = 0.3f + effectiveThrottle * 0.7f
         var stealthMultiplier = speedMultiplier * hidingMultiplier
         if (newSubmerged) {
@@ -515,7 +516,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val ambientAccumulation = (0.015f * sector.threat) + (state.pursuers.size * 0.02f)
         val boostAccumulation = if (effectiveThrottle > 0.6f) (effectiveThrottle - 0.6f) * 0.3f else 0f
         
-        val totalAccumulation = (ambientAccumulation + boostAccumulation) * stealthMultiplier
+        val totalAccumulation = (ambientAccumulation + boostAccumulation) * stealthMultiplier * environment.detectionMultiplier
         newDetection = min(1f, newDetection + dt * totalAccumulation)
 
         // Apply decay
@@ -784,7 +785,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         // Magnetic force to the nearest lane, weakens if dragging strongly or boosting
-        val magnetStrength = if (boost) 3f else if (isDragging) 6f else 12f
+        val baseMagnetStrength = if (boost) 3f else if (isDragging) 6f else 12f
+        val magnetStrength = baseMagnetStrength * environment.laneMagnetMultiplier
         val magnetForce = (nearestLane - state.playerX) * magnetStrength
         
         val totalAcceleration = inputForce + magnetForce - state.playerVelocityX * 8f // Damping

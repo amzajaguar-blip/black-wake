@@ -8,19 +8,21 @@ import kotlin.math.sin
 
 object SynthAudioEngine {
     private const val SAMPLE_RATE = 22050
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var streamJob: Job? = null
     private var track: AudioTrack? = null
-    private var isPlaying = false
+    @Volatile private var isPlaying = false
     private val buffer = ShortArray(2048)
     
     // State
-    var engineRpm: Float = 0f // 0 to 1
-    var isBoosting: Boolean = false
-    var detectionLevel: Float = 0f
-    var pursuerCount: Int = 0
-    var hasSiren: Boolean = false
-    var isOxygenLow: Boolean = false
-    var hullIntegrity: Float = 100f
-    var isMuted: Boolean = false
+    @Volatile var engineRpm: Float = 0f // 0 to 1
+    @Volatile var isBoosting: Boolean = false
+    @Volatile var detectionLevel: Float = 0f
+    @Volatile var pursuerCount: Int = 0
+    @Volatile var hasSiren: Boolean = false
+    @Volatile var isOxygenLow: Boolean = false
+    @Volatile var hullIntegrity: Float = 100f
+    @Volatile var isMuted: Boolean = false
     
     private var phaseEngine = 0f
     private var phaseWind = 0f
@@ -55,8 +57,8 @@ object SynthAudioEngine {
         isPlaying = true
         track?.play()
         
-        CoroutineScope(Dispatchers.IO).launch {
-            while (isPlaying) {
+        streamJob = scope.launch {
+            while (isPlaying && isActive) {
                 fillBuffer()
                 track?.write(buffer, 0, buffer.size)
             }
@@ -65,7 +67,12 @@ object SynthAudioEngine {
     
     fun stop() {
         isPlaying = false
-        track?.stop()
+        streamJob?.cancel()
+        streamJob = null
+        try {
+            track?.stop()
+        } catch (_: IllegalStateException) {
+        }
         track?.release()
         track = null
     }
@@ -166,7 +173,7 @@ object SynthAudioEngine {
     fun playExplosion() {
         if (isMuted) return
         // Noise burst
-        CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             val t = AudioTrack(
                 AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, 4096, AudioTrack.MODE_STREAM
@@ -185,7 +192,7 @@ object SynthAudioEngine {
     
     fun playTone(freq: Float, durationSec: Float) {
         if (isMuted) return
-        CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             val t = AudioTrack(
                 AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, 2048, AudioTrack.MODE_STREAM

@@ -15,18 +15,14 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.abs
-import kotlin.math.pow
+import kotlin.random.Random
 
 enum class GameMode {
-    MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF, PATCHING
+    MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF
 }
 
 enum class EntityType {
     INTEL, FUEL, WRECK, MINE, ENEMY, FORK
-}
-
-enum class PlayerBoatType {
-    SPEEDBOAT, RACING, PATROL, SMUGGLER, STEALTH, ARMORED
 }
 
 enum class EnemyBoatType {
@@ -34,7 +30,7 @@ enum class EnemyBoatType {
 }
 
 enum class PursuerState {
-    PATROL, SEARCH, DETECTED, PURSUIT, INTERCEPT, ATTACK, LOST_TARGET, SEARCH_AGAIN
+    PATROL, SEARCH, DETECTED, PURSUIT, INTERCEPT, LOST_TARGET, SEARCH_AGAIN
 }
 
 data class Pursuer(
@@ -48,7 +44,6 @@ data class Pursuer(
     var ai: PursuerAI? = null,
     var roll: Float = 0f,
     var timer: Float = 0f,
-    var health: Float = 100f,
     var targetX: Float = 0f
 )
 
@@ -70,20 +65,8 @@ data class Entity(
 enum class CompartmentState { NORMAL, SEALED, BREACHED }
 data class Compartment(val id: String, val name: String, val state: CompartmentState = CompartmentState.NORMAL)
 
-data class LeakNode(
-    val id: Int,
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val fixed: Boolean = false
-)
-
-data class TerminalMessage(val text: String, val color: String, val timestamp: Float)
-
 data class GameState(
     val mode: GameMode = GameMode.MENU,
-    val playerBoatType: PlayerBoatType = PlayerBoatType.SPEEDBOAT,
     val currentChapterIndex: Int = 0,
     val unlockedChapterCount: Int = 1,
     val sectorIndex: Int = 0,
@@ -92,6 +75,7 @@ data class GameState(
     val spawnClock: Float = 0f,
     val tutorialStep: Int = 0,
     val difficultyMultiplier: Float = 1.0f,
+    val runSeed: Int = 0,
     
     val sonarCharges: Int = 1,
     val sonarRegenTimer: Float = 0f,
@@ -101,7 +85,6 @@ data class GameState(
     val isSubmerged: Boolean = false,
     val oxygen: Float = 100f,
     val showTacticalMap: Boolean = false,
-    val showEventLog: Boolean = false,
     val showDamageControl: Boolean = false,
     val isAudioMuted: Boolean = false,
     val isEmergencyPowerActive: Boolean = false,
@@ -112,8 +95,6 @@ data class GameState(
     val playerDepth: Float = 0f,
     val pressureEventActive: Boolean = false,
     val flareActiveTimer: Float = 0f,
-    val batteryHistory: List<Float> = listOf(),
-    val batteryDrainRate: Float = 0f,
     val compartments: List<Compartment> = listOf(
         Compartment("BOW", "PRUA"),
         Compartment("MID", "CENTRO NAVE"),
@@ -143,8 +124,6 @@ data class GameState(
     val screenFlash: Float = 0f,
     val flashColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Transparent,
     
-    val hasTriggeredPatching: Boolean = false,
-    val leakNodes: List<LeakNode> = emptyList(),
     
     val forkSpawned: Boolean = false,
     val forkNotice: String? = null,
@@ -161,86 +140,22 @@ data class GameState(
     
     val messageFlash: String? = null,
     val messageColor: String = "cyan",
-    val terminalFeed: List<TerminalMessage> = emptyList(),
-    val isGlobalEmergency: Boolean = false,
     
     val isWon: Boolean = false,
     val debriefReason: String = ""
 )
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
-    init {
-        SynthAudioEngine.start()
-        // Load on startup if we were in the middle of a run. But wait, mode defaults to MENU.
-        // We'd have to restore the whole game state for a true session resume, but we'll at least restore pursuers.
-        loadPursuers()
-    }
-    private val prefs = getApplication<Application>().getSharedPreferences("PursuerStatePrefs", Context.MODE_PRIVATE)
-
-    private fun savePursuers() {
-        val pursuers = _uiState.value.pursuers
-        val csvList = pursuers.map { p ->
-            PursuerSaveState(
-                id = p.id,
-                type = p.type.name,
-                x = p.x,
-                y = p.y,
-                velocityX = p.velocityX,
-                velocityY = p.velocityY,
-                state = p.state.name,
-                roll = p.roll,
-                timer = p.timer,
-                health = p.health,
-                targetX = p.targetX
-            ).toCsv()
-        }
-        val encoded = csvList.joinToString(";")
-        prefs.edit().putString("saved_pursuers", encoded).apply()
-    }
-
-    fun loadPursuers() {
-        val encoded = prefs.getString("saved_pursuers", "") ?: ""
-        if (encoded.isEmpty()) return
-        
-        val csvList = encoded.split(";")
-        val loadedPursuers = csvList.mapNotNull { csv ->
-            PursuerSaveState.fromCsv(csv)?.let { saveState ->
-                Pursuer(
-                    id = saveState.id,
-                    type = EnemyBoatType.valueOf(saveState.type),
-                    x = saveState.x,
-                    y = saveState.y,
-                    velocityX = saveState.velocityX,
-                    velocityY = saveState.velocityY,
-                    state = PursuerState.valueOf(saveState.state),
-                    ai = PursuerAI(EnemyBoatType.valueOf(saveState.type), PursuerState.valueOf(saveState.state)).apply { timer = saveState.timer },
-                    roll = saveState.roll,
-                    timer = saveState.timer,
-                    health = saveState.health,
-                    targetX = saveState.targetX
-                )
-            }
-        }
-        
-        _uiState.update { it.copy(pursuers = loadedPursuers) }
-    }
-    
-    fun clearPursuers() {
-        prefs.edit().remove("saved_pursuers").apply()
-    }
-
-    private val _uiState = MutableStateFlow(GameState())
+    private val progressionRepository = ProgressionRepository(application)
+    private val _uiState = MutableStateFlow(progressionRepository.load())
     val uiState: StateFlow<GameState> = _uiState.asStateFlow()
-    
-    
+
     private var entityIdCounter = 0
-    private var lastTime = System.currentTimeMillis()
+    private var runRandom: Random = Random.Default
     
     var targetPlayerX: Float = 0f // Touch drag target
     private var isDragging = false
     
-    private var isBoostHeld = false
-    private var isSilentHeld = false
     private var isDiveHeld = false
 
     fun setDive(held: Boolean) { isDiveHeld = held }
@@ -254,10 +169,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         isDragging = false
     }
 
-    fun startGame() {
+    fun startGame(seed: Int = Random.Default.nextInt()) {
+        isDragging = false
+        isDiveHeld = false
+        targetPlayerX = 0f
+        runRandom = Random(seed)
+        entityIdCounter = 0
+        SynthAudioEngine.hasSiren = false
+        SynthAudioEngine.start()
+
         val chapter = CHAPTERS[_uiState.value.currentChapterIndex]
         val sector = chapter.sectors.first()
-                clearPursuers()
         _uiState.update { state ->
             state.copy(
                 mode = GameMode.RUNNING,
@@ -269,11 +191,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 sectorIndex = 0,
                 sectorElapsed = 0f,
                 runElapsed = 0f,
-                tutorialStep = 0,
+                tutorialStep = if (state.unlockedChapterCount > 1) 5 else 0,
+                runSeed = seed,
                 sonarCharges = 1 + state.modules.radar,
                 sonarRegenTimer = 0f,
                 sonarPingActive = false,
                 sonarPingRadius = 0f,
+                isSubmerged = false,
+                oxygen = 100f,
+                showTacticalMap = false,
+                showDamageControl = false,
+                isEmergencyPowerActive = false,
+                battery = 100f,
+                flareCharges = 3,
+                seabedDepth = 50f,
+                submergedTimer = 0f,
+                playerDepth = 0f,
+                pressureEventActive = false,
+                flareActiveTimer = 0f,
+                compartments = listOf(
+                    Compartment("BOW", "PRUA"),
+                    Compartment("MID", "CENTRO NAVE"),
+                    Compartment("AFT", "POPPA"),
+                    Compartment("ENG", "MOTORI")
+                ),
                 playerX = 0f,
                 playerVelocityX = 0f,
                 playerRoll = 0f,
@@ -291,6 +232,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 invulnerable = 0f,
                 pursuitCooldown = 0f,
                 pursuers = emptyList(),
+                proximityPingTimer = 0f,
+                lastDeltaTime = 0f,
+                isWon = false,
+                debriefReason = "",
                 messageFlash = "CAP. ${chapter.code} // ${sector.title}",
                 messageColor = "cyan"
             )
@@ -316,30 +261,44 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         SynthAudioEngine.stop()
         super.onCleared()
-        if (_uiState.value.mode == GameMode.RUNNING || _uiState.value.mode == GameMode.PAUSED) {
-            savePursuers()
-        }
     }
     fun togglePause() {
         _uiState.update { state ->
-            if (state.mode == GameMode.RUNNING) {
-                
-                state.copy(mode = GameMode.PAUSED)
-            } else if (state.mode == GameMode.PAUSED) {
-                
-                state.copy(mode = GameMode.RUNNING)
-            } else state
+            when (state.mode) {
+                GameMode.RUNNING -> {
+                    SynthAudioEngine.stop()
+                    state.copy(mode = GameMode.PAUSED)
+                }
+                GameMode.PAUSED -> {
+                    SynthAudioEngine.start()
+                    state.copy(mode = GameMode.RUNNING)
+                }
+                else -> state
+            }
         }
     }
 
-    fun openMenu() { ; _uiState.update { it.copy(mode = GameMode.MENU) } }
+    fun pauseForLifecycle() {
+        _uiState.update { state ->
+            if (state.mode == GameMode.RUNNING) {
+                SynthAudioEngine.stop()
+                state.copy(mode = GameMode.PAUSED)
+            } else {
+                state
+            }
+        }
+    }
+
+    fun openMenu() {
+        SynthAudioEngine.stop()
+        _uiState.update { it.copy(mode = GameMode.MENU) }
+    }
     fun openBriefing(chapterIndex: Int) { _uiState.update { it.copy(mode = GameMode.BRIEFING, currentChapterIndex = chapterIndex) } }
     fun openGarage() { _uiState.update { it.copy(mode = GameMode.GARAGE) } }
     
     fun buyModule(id: String) {
         _uiState.update { state ->
             val modValue = when(id) {
-                "engine" -> state.modules.engine
                 "hull" -> state.modules.hull
                 "tank" -> state.modules.tank
                 "radar" -> state.modules.radar
@@ -349,20 +308,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             if (modValue >= 3) return@update state
             val cost = MODULES.find { it.id == id }?.costs?.get(modValue) ?: return@update state
             if (state.intelBank >= cost) {
-                val newModules = state.modules.copy().apply {
-                    when(id) {
-                        "engine" -> engine++
-                        "hull" -> hull++
-                        "tank" -> tank++
-                        "radar" -> radar++
-                        "stealth" -> stealth++
-                    }
+                val newModules = when(id) {
+                    "hull" -> state.modules.copy(hull = state.modules.hull + 1)
+                    "tank" -> state.modules.copy(tank = state.modules.tank + 1)
+                    "radar" -> state.modules.copy(radar = state.modules.radar + 1)
+                    "stealth" -> state.modules.copy(stealth = state.modules.stealth + 1)
+                    else -> state.modules
                 }
                 state.copy(intelBank = state.intelBank - cost, modules = newModules)
             } else {
                 state.copy(messageFlash = "INTEL INSUFFICIENTE", messageColor = "red")
             }
         }
+        progressionRepository.save(_uiState.value)
     }
 
 
@@ -379,15 +337,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-        fun toggleGlobalEmergency() {
-        _uiState.update { state -> 
-            val newEmergency = !state.isGlobalEmergency
-            SynthAudioEngine.hasSiren = newEmergency
-            state.copy(isGlobalEmergency = newEmergency) 
-        }
-    }
-
-    fun toggleEmergencyPower() {
+        fun toggleEmergencyPower() {
         _uiState.update { 
             if (!it.isEmergencyPowerActive && it.battery <= 0f) {
                 it // Cannot turn on if battery is 0
@@ -427,54 +377,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     
-    fun toggleEventLog() {
-        _uiState.update { it.copy(showEventLog = !it.showEventLog) }
-    }
-
     fun toggleTacticalMap() {
         _uiState.update { it.copy(showTacticalMap = !it.showTacticalMap) }
-    }
-
-    fun patchNode(id: Int) {
-        _uiState.update { state ->
-            if (state.mode != GameMode.PATCHING) return@update state
-            val newNodes = state.leakNodes.map { if (it.id == id) it.copy(fixed = true) else it }
-            SynthAudioEngine.playTone(1200f, 0.1f)
-            
-            var newMode = state.mode
-            var newHull = state.hull
-            if (newNodes.all { it.fixed }) {
-                newMode = GameMode.RUNNING
-                newHull = kotlin.math.min(100f, state.hull + 20f)
-                SynthAudioEngine.playTone(880f, 0.4f)
-            }
-            
-            state.copy(leakNodes = newNodes, mode = newMode, hull = newHull)
-        }
-    }
-    
-    fun updatePatching(dt: Float) {
-        _uiState.update { state ->
-            if (state.mode != GameMode.PATCHING) return@update state
-            
-            val newNodes = state.leakNodes.map { node ->
-                if (node.fixed) {
-                     node
-                } else {
-                     var nx = node.x + node.vx * dt
-                     var ny = node.y + node.vy * dt
-                     var nvx = node.vx
-                     var nvy = node.vy
-                     if (nx < 0.1f || nx > 0.9f) nvx = -nvx
-                     if (ny < 0.1f || ny > 0.9f) nvy = -nvy
-                     nx = nx.coerceIn(0.1f, 0.9f)
-                     ny = ny.coerceIn(0.1f, 0.9f)
-                     node.copy(x = nx, y = ny, vx = nvx, vy = nvy)
-                }
-            }
-            
-            state.copy(leakNodes = newNodes)
-        }
     }
 
     fun updateGame(dt: Float) {
@@ -483,6 +387,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         val chapter = CHAPTERS[state.currentChapterIndex]
         val sector = chapter.sectors[min(state.sectorIndex, chapter.sectors.size - 1)]
+        val environment = EnvironmentRules.forEnvironment(sector.environment)
 
         var newInvulnerable = max(0f, state.invulnerable - dt)
         var newCameraShake = max(0f, state.cameraShake - dt * 3f)
@@ -492,43 +397,34 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val boost = effectiveThrottle > 0.8f
         val silent = effectiveThrottle < 0.2f
         val canSubmerge = state.oxygen > 0f
-        val wasO2Critical = state.oxygen < 20f
         val newSubmerged = isDiveHeld && canSubmerge
         val newFlareActiveTimer = kotlin.math.max(0f, state.flareActiveTimer - dt)
         
-        var newOxygen = state.oxygen
-        var newBattery = state.battery
-        var newEmergencyPowerActive = state.isEmergencyPowerActive
-        val drainRate = if (newEmergencyPowerActive) 10f else -2.5f
-        if (newEmergencyPowerActive) {
-            newBattery = kotlin.math.max(0f, newBattery - dt * drainRate) // deplete battery faster (10 seconds)
-            if (newBattery == 0f) {
-                newEmergencyPowerActive = false
-                newCameraShake = 0.5f
-                triggerVibration(longArrayOf(0, 100, 50, 100))
-                flashMessage("OVERRIDE FALLITO // BATTERIA ESAURITA", "red")
-            }
-        } else {
-            newBattery = kotlin.math.min(100f, newBattery - dt * drainRate) // recharge in 40 seconds
+        val batteryStep = ResourceSystem.stepBattery(
+            battery = state.battery,
+            emergencyActive = state.isEmergencyPowerActive,
+            dt = dt
+        )
+        val newBattery = batteryStep.battery
+        val newEmergencyPowerActive = batteryStep.emergencyActive
+        if (batteryStep.depletedNow) {
+            newCameraShake = 0.5f
+            triggerVibration(longArrayOf(0, 100, 50, 100))
+            flashMessage("OVERRIDE FALLITO // BATTERIA ESAURITA", "red")
         }
         
-        // Update history periodically
-        val newHistory = if (state.runElapsed % 0.5f < dt) {
-            (state.batteryHistory + newBattery).takeLast(60)
-        } else {
-            state.batteryHistory
-        }
-
-        val o2DepleteRate = if (newEmergencyPowerActive) 15f else 25f
-        val o2RegenRate = if (newEmergencyPowerActive) 45f else 15f
+        val newOxygen = ResourceSystem.stepOxygen(
+            oxygen = state.oxygen,
+            submerged = newSubmerged,
+            emergencyActive = newEmergencyPowerActive,
+            dt = dt
+        )
         
         var newSubmergedTimer = state.submergedTimer
         var newPressureEventActive = false
         if (newSubmerged) {
-            newOxygen = kotlin.math.max(0f, newOxygen - dt * o2DepleteRate)
             newSubmergedTimer += dt
         } else {
-            newOxygen = kotlin.math.min(100f, newOxygen + dt * o2RegenRate)
             newSubmergedTimer = kotlin.math.max(0f, newSubmergedTimer - dt * 2f)
         }
 
@@ -594,16 +490,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 triggerVibration(longArrayOf(0, 30)) // Short pulse for obstacle
             }
 
-            if (newSonarRadius > 1200f) { // Cover the screen
+            if (newSonarRadius > environment.sonarRange) {
                 newSonarActive = false
                 newSonarRadius = 0f
             }
         }
 
         // Fuel & Detection update
-        val fuelUsageRate = 0.5f + effectiveThrottle * effectiveThrottle * 6.1f
-        var newFuel = max(0f, state.fuel - dt * fuelUsageRate)
-        var newDrift = state.drift
+        val fuelStep = ResourceSystem.stepFuel(
+            fuel = state.fuel,
+            drift = state.drift,
+            effectiveThrottle = effectiveThrottle,
+            dt = dt
+        )
+        var newFuel = fuelStep.fuel
+        var newDrift = fuelStep.drift
+        if (fuelStep.exhaustedNow) {
+            flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
+        }
         var newDetection = state.detection
         
         // Stealth Mechanic Check: Hiding behind obstacles
@@ -616,7 +520,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        val hidingMultiplier = if (isBehindWreck) 0.2f else 1.0f
+        val hidingMultiplier = if (isBehindWreck) environment.wreckCoverMultiplier else 1.0f
         val speedMultiplier = 0.3f + effectiveThrottle * 0.7f
         var stealthMultiplier = speedMultiplier * hidingMultiplier
         if (newSubmerged) {
@@ -627,7 +531,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val ambientAccumulation = (0.015f * sector.threat) + (state.pursuers.size * 0.02f)
         val boostAccumulation = if (effectiveThrottle > 0.6f) (effectiveThrottle - 0.6f) * 0.3f else 0f
         
-        val totalAccumulation = (ambientAccumulation + boostAccumulation) * stealthMultiplier
+        val totalAccumulation = (ambientAccumulation + boostAccumulation) * stealthMultiplier * environment.detectionMultiplier
         newDetection = min(1f, newDetection + dt * totalAccumulation)
 
         // Apply decay
@@ -642,20 +546,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         newDetection = max(0.0f, newDetection - dt * decayRate)
 
-        if (state.fuel <= 0f) { newDrift = max(0f, newDrift - dt) }
-        if (state.fuel == 0f && state.drift <= 0f && newFuel == 0f) {
-            if (state.drift == 0f && state.fuel > 0f) {
-                newDrift = 3f
-                flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
-            }
-        }
-        
         var newHull = state.hull
-        if (state.fuel == 0f && newDrift <= 0f && newInvulnerable <= 0f) {
+        if (newFuel <= 0f && newDrift <= 0f && newInvulnerable <= 0f) {
             newHull = max(0f, newHull - 2.3f * dt)
             if (newHull <= 0f) { finishRun(false, "Il mare entra nello scafo."); return }
         }
-        if (state.oxygen == 0f && newSubmerged) {
+        if (newOxygen <= 0f && newSubmerged) {
             newHull = max(0f, newHull - 15f * dt) // Severe damage when drowning
             if (newHull <= 0f) { finishRun(false, "Scafo imploso per mancanza d'ossigeno."); return }
             newScreenFlash = 0.3f
@@ -677,14 +573,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         var newPeak = max(state.peakDetection, newDetection)
         var newPursuit = state.pursuitCooldown - dt
-        var newEntities = state.entities.toMutableList()
-        var newPursuers = state.pursuers.toMutableList()
+        var newEntities = state.entities.map { it.copy() }.toMutableList()
+        var newPursuers = state.pursuers.map { pursuer ->
+            val sourceAi = pursuer.ai
+            pursuer.copy(
+                ai = sourceAi?.let {
+                    PursuerAI(pursuer.type, it.state).apply { timer = it.timer }
+                }
+            )
+        }.toMutableList()
         
         // --- PURSUER AI UPDATE ---
         val pursuerIter = newPursuers.iterator()
         while(pursuerIter.hasNext()) {
             val p = pursuerIter.next()
-            p.timer += dt
             
             // Basic movement forward
             val speedLimit = when (p.type) {
@@ -700,8 +602,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 EnemyBoatType.PATROL -> 0.2f
                 EnemyBoatType.INTERCEPTOR -> 0.8f
                 EnemyBoatType.POLICE -> 0.5f
+                EnemyBoatType.HUNTER -> 1.0f
+                EnemyBoatType.ARMORED -> 0.1f
                 EnemyBoatType.ELITE -> 1.2f
-                else -> 0.3f
             }
             
             // Distance check & state transitions
@@ -767,7 +670,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     newInvulnerable = 2f
                     val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                     if (normalComps.isNotEmpty()) {
-                        val toBreach = normalComps.random()
+                        val toBreach = normalComps.random(runRandom)
                         newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                         flashMessage("ALLAGAMENTO: ${toBreach.name}", "red")
                     }
@@ -781,7 +684,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // Spawn Pursuers dynamically
         if (newDetection >= 0.7f && newPursuers.isEmpty() && newPursuit <= 0f) {
             val type = if (newDetection > 0.9f) EnemyBoatType.ELITE else EnemyBoatType.PATROL
-            newPursuers.add(Pursuer(entityIdCounter++, type, x = state.playerX + (Math.random().toFloat() - 0.5f), y = 120f)) // Spawn from bottom (behind)
+            newPursuers.add(Pursuer(entityIdCounter++, type, x = state.playerX + (runRandom.nextFloat() - 0.5f), y = 120f)) // Spawn from bottom (behind)
             flashMessage("INSEGUITORE IN AVVICINAMENTO", "amber")
             SynthAudioEngine.playTone(400f, 0.5f)
             newPursuit = 5f
@@ -806,23 +709,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         var newTutorialStep = state.tutorialStep
 
         if (state.currentChapterIndex == 0 && state.sectorIndex == 0 && newTutorialStep < 5) {
-            // Scripted invisible tutorial
-            if (newSectorElapsed > 1.5f && newTutorialStep == 0) {
+            // First-session scripted onboarding with visible coachmarks.
+            if (newSectorElapsed > 2.0f && newTutorialStep == 0) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.FUEL, 1, 0f, 100f))
                 newTutorialStep = 1
-            } else if (newSectorElapsed > 4.5f && newTutorialStep == 1) {
+            } else if (newSectorElapsed > 5.5f && newTutorialStep == 1) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.INTEL, 2, 1f, 100f))
                 newTutorialStep = 2
-            } else if (newSectorElapsed > 7.5f && newTutorialStep == 2) {
+            } else if (newSectorElapsed > 9.0f && newTutorialStep == 2) {
                 newEntities.add(Entity(entityIdCounter++, EntityType.WRECK, 1, 0f, 100f))
                 newTutorialStep = 3
-            } else if (newSectorElapsed > 11.5f && newTutorialStep == 3) {
+            } else if (newSectorElapsed > 12.0f && newTutorialStep == 3) {
                 // Require boost to get both
                 newEntities.add(Entity(entityIdCounter++, EntityType.FUEL, 0, -1f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.MINE, 1, 0f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.INTEL, 2, 1f, 100f))
                 newTutorialStep = 4
-            } else if (newSectorElapsed > 15.5f && newTutorialStep == 4) {
+            } else if (newSectorElapsed > 15.0f && newTutorialStep == 4) {
                 // Introduce enemies and silent mode
                 newEntities.add(Entity(entityIdCounter++, EntityType.ENEMY, 0, -1f, 100f))
                 newEntities.add(Entity(entityIdCounter++, EntityType.ENEMY, 2, 1f, 100f))
@@ -830,19 +733,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 newSpawnClock = 3.0f // Resume normal spawns
             }
         } else if (newSpawnClock <= 0f) {
-            val roll = Math.random().toFloat()
+            val roll = runRandom.nextFloat()
             val threatMulti = if (newDetection > 0.65f) 1.5f else 1f
             val type = when {
                 roll < sector.intelBias * 0.52f -> EntityType.INTEL
                 roll < sector.intelBias * 0.52f + 0.12f -> EntityType.FUEL
-                roll < sector.intelBias * 0.52f + sector.threat * 0.32f * threatMulti -> if (Math.random() > 0.5) EntityType.ENEMY else EntityType.MINE
+                roll < sector.intelBias * 0.52f + sector.threat * 0.32f * threatMulti -> if (runRandom.nextBoolean()) EntityType.ENEMY else EntityType.MINE
                 else -> EntityType.WRECK
             }
-            val lane = (Math.random() * 3).toInt()
+            val lane = runRandom.nextInt(3)
             val xPos = (lane - 1).toFloat()
             
             val eType = if (type == EntityType.ENEMY) {
-                val r = Math.random()
+                val r = runRandom.nextDouble()
                 when {
                     r < 0.3 -> EnemyBoatType.PATROL
                     r < 0.6 -> EnemyBoatType.INTERCEPTOR
@@ -858,10 +761,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 type = type, 
                 lane = lane, 
                 startX = xPos, 
-                z = 96f + (Math.random() * 18).toFloat(),
+                z = 96f + runRandom.nextFloat() * 18f,
                 enemyType = eType
             ))
-            newSpawnClock = max(0.45f, 1.15f - sector.density * 0.48f + (Math.random() * 0.35).toFloat())
+            newSpawnClock = max(0.45f, 1.15f - sector.density * 0.48f + runRandom.nextFloat() * 0.35f)
         }
 
         var newForkExpire = state.forkExpire
@@ -898,7 +801,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         // Magnetic force to the nearest lane, weakens if dragging strongly or boosting
-        val magnetStrength = if (boost) 3f else if (isDragging) 6f else 12f
+        val baseMagnetStrength = if (boost) 3f else if (isDragging) 6f else 12f
+        val magnetStrength = baseMagnetStrength * environment.laneMagnetMultiplier
         val magnetForce = (nearestLane - state.playerX) * magnetStrength
         
         val totalAcceleration = inputForce + magnetForce - state.playerVelocityX * 8f // Damping
@@ -995,7 +899,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                             if (actualDmg > 10f) {
                                 val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                                 if (normalComps.isNotEmpty()) {
-                                    val toBreach = normalComps.random()
+                                    val toBreach = normalComps.random(runRandom)
                                     newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                                     flashMessage("FALLA: ${toBreach.name}", "red")
                                 }
@@ -1020,10 +924,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                             newHull = max(0f, newHull - actualDmg)
                             newInvulnerable = 0.86f
                             triggerVibration(longArrayOf(0, 80, 40, 120)) // Medium enemy hit
-                            if (actualDmg > 10f && java.util.Random().nextBoolean()) {
+                            if (actualDmg > 10f && runRandom.nextBoolean()) {
                                 val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                                 if (normalComps.isNotEmpty()) {
-                                    val toBreach = normalComps.random()
+                                    val toBreach = normalComps.random(runRandom)
                                     newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                                     flashMessage("ALLAGAMENTO: ${toBreach.name}", "red")
                                 }
@@ -1102,6 +1006,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        SynthAudioEngine.engineRpm = effectiveThrottle
+        SynthAudioEngine.isBoosting = boost
+        SynthAudioEngine.detectionLevel = newDetection
+        SynthAudioEngine.pursuerCount = newPursuers.count { it.state != PursuerState.LOST_TARGET }
+        SynthAudioEngine.hasSiren = newDetection >= 0.80f || newHull < 25f
+        SynthAudioEngine.isOxygenLow = newOxygen < 20f
+        SynthAudioEngine.hullIntegrity = newHull
+
         _uiState.update { s ->
             s.copy(
                 fuel = newFuel,
@@ -1124,11 +1036,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 comboMultiplier = newComboMult,
                 cameraShake = newCameraShake,
                 screenFlash = newScreenFlash,
+                isSubmerged = newSubmerged,
+                oxygen = newOxygen,
+                sonarCharges = newSonarCharges,
+                sonarRegenTimer = newSonarRegen,
+                sonarPingActive = newSonarActive,
+                sonarPingRadius = newSonarRadius,
                 flareActiveTimer = newFlareActiveTimer,
                 isEmergencyPowerActive = newEmergencyPowerActive,
                 battery = newBattery,
-                batteryHistory = newHistory,
-                batteryDrainRate = drainRate,
                 seabedDepth = newSeabedDepth,
                 submergedTimer = newSubmergedTimer,
                 playerDepth = newPlayerDepth,
@@ -1149,7 +1065,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishRun(won: Boolean, reason: String) {
         
         val banked = if (won) _uiState.value.intel else (_uiState.value.intel * 0.4).toInt()
-        val nextUnlocked = won && _uiState.value.currentChapterIndex + 1 == _uiState.value.unlockedChapterCount && _uiState.value.currentChapterIndex < CHAPTERS.size - 1
         val newUnlockedCount = if (won) min(CHAPTERS.size, max(_uiState.value.unlockedChapterCount, _uiState.value.currentChapterIndex + 2)) else _uiState.value.unlockedChapterCount
         
         _uiState.update { it.copy(
@@ -1160,15 +1075,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             bestIntel = max(it.bestIntel, it.intel),
             unlockedChapterCount = newUnlockedCount
         ) }
+        progressionRepository.save(_uiState.value)
     }
 
     private fun flashMessage(msg: String, color: String) {
         _uiState.update { 
             it.copy(
-                messageFlash = msg, 
-                messageColor = color,
-                terminalFeed = (listOf(TerminalMessage(msg, color, it.runElapsed)) + it.terminalFeed).take(200)
-            ) 
+                messageFlash = msg,
+                messageColor = color
+            )
         }
         viewModelScope.launch {
             delay(1500)
@@ -1190,8 +1105,5 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             // Ignore if vibration is not available
         }
-    }
-    fun setPlayerBoat(b: PlayerBoatType) {
-        _uiState.update { it.copy(playerBoatType = b) }
     }
 }

@@ -1,8 +1,0 @@
-{
-  "name": "marea-nera",
-  "version": "1.0.0",
-  "scripts": {
-    "build": "gradle assembleDebug",
-    "dev": "gradle assembleDebug"
-  }
-}

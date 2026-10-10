@@ -81,7 +81,6 @@ val CHAPTERS = listOf(
 data class ModuleDef(val id: String, val title: String, val tag: String, val detail: String, val costs: List<Int>)
 
 val MODULES = listOf(
-    ModuleDef("engine", "MOTORE", "SPINTA", "Boost più efficiente.", listOf(12, 28, 50)),
     ModuleDef("hull", "SCAFO", "INTEGRITÀ", "Assorbe l'impatto.", listOf(14, 30, 55)),
     ModuleDef("tank", "SERBATOIO", "AUTONOMIA", "Più carburante recuperato.", listOf(10, 24, 44)),
     ModuleDef("radar", "RADAR", "AVVISO", "Segnali prima, panico dopo.", listOf(16, 32, 58)),
@@ -89,7 +88,6 @@ val MODULES = listOf(
 )
 
 data class ModulesState(
-    var engine: Int = 0,
     var hull: Int = 0,
     var tank: Int = 0,
     var radar: Int = 0,

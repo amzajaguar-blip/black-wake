@@ -1,7 +1,5 @@
 package com.blackwake.game
 
-import android.util.Log
-
 class PursuerAI(
     val type: EnemyBoatType,
     var state: PursuerState = PursuerState.PATROL
@@ -10,8 +8,6 @@ class PursuerAI(
 
     private fun changeState(newState: PursuerState) {
         if (this.state != newState) {
-            val timestamp = System.currentTimeMillis()
-            Log.d("PursuerAI", "State transition: ${this.state} -> $newState at time $timestamp")
             this.state = newState
             this.timer = 0f
         }
@@ -78,49 +74,6 @@ class PursuerAI(
             }
             PursuerState.LOST_TARGET -> {
                 // Terminal state, handled by external cleanup
-            }
-        }
-    }
-}
-
-
-data class PursuerSaveState(
-    val id: Int,
-    val type: String,
-    val x: Float,
-    val y: Float,
-    val velocityX: Float,
-    val velocityY: Float,
-    val state: String,
-    val roll: Float,
-    val timer: Float,
-    val health: Float,
-    val targetX: Float
-) {
-    fun toCsv(): String {
-        return "$id,$type,$x,$y,$velocityX,$velocityY,$state,$roll,$timer,$health,$targetX"
-    }
-
-    companion object {
-        fun fromCsv(csv: String): PursuerSaveState? {
-            val parts = csv.split(",")
-            if (parts.size != 11) return null
-            return try {
-                PursuerSaveState(
-                    id = parts[0].toInt(),
-                    type = parts[1],
-                    x = parts[2].toFloat(),
-                    y = parts[3].toFloat(),
-                    velocityX = parts[4].toFloat(),
-                    velocityY = parts[5].toFloat(),
-                    state = parts[6],
-                    roll = parts[7].toFloat(),
-                    timer = parts[8].toFloat(),
-                    health = parts[9].toFloat(),
-                    targetX = parts[10].toFloat()
-                )
-            } catch (e: Exception) {
-                null
             }
         }
     }

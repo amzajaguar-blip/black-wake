@@ -88,8 +88,8 @@ val MODULES = listOf(
 )
 
 data class ModulesState(
-    var hull: Int = 0,
-    var tank: Int = 0,
-    var radar: Int = 0,
-    var stealth: Int = 0
+    val hull: Int = 0,
+    val tank: Int = 0,
+    val radar: Int = 0,
+    val stealth: Int = 0
 )

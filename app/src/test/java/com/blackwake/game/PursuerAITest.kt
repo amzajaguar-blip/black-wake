@@ -61,7 +61,7 @@ class PursuerAITest {
         assertEquals(PursuerState.SEARCH, ai.state)
 
         ai.update(
-            dt = 3.1f,
+            dt = 4.6f,
             detectionPercentage = 0.1f,
             distanceY = 40f,
             isPlayerSilent = true
@@ -69,12 +69,33 @@ class PursuerAITest {
         assertEquals(PursuerState.SEARCH_AGAIN, ai.state)
 
         ai.update(
-            dt = 2.1f,
+            dt = 2.6f,
             detectionPercentage = 0.1f,
             distanceY = 40f,
             isPlayerSilent = true
         )
         assertEquals(PursuerState.LOST_TARGET, ai.state)
+    }
+
+    @Test
+    fun hunterDetectsEarlierThanPatrol() {
+        val patrol = PursuerAI(EnemyBoatType.PATROL)
+        val hunter = PursuerAI(EnemyBoatType.HUNTER)
+
+        patrol.update(0.1f, 0.56f, 40f, false)
+        hunter.update(0.1f, 0.56f, 40f, false)
+
+        assertEquals(PursuerState.PATROL, patrol.state)
+        assertEquals(PursuerState.DETECTED, hunter.state)
+    }
+
+    @Test
+    fun eliteCanInterceptAtCloseRange() {
+        val elite = PursuerAI(EnemyBoatType.ELITE, PursuerState.PURSUIT)
+
+        elite.update(0.1f, 0.9f, 15f, false)
+
+        assertEquals(PursuerState.INTERCEPT, elite.state)
     }
 
     @Test

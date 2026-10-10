@@ -602,8 +602,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 EnemyBoatType.PATROL -> 0.2f
                 EnemyBoatType.INTERCEPTOR -> 0.8f
                 EnemyBoatType.POLICE -> 0.5f
+                EnemyBoatType.HUNTER -> 1.0f
+                EnemyBoatType.ARMORED -> 0.1f
                 EnemyBoatType.ELITE -> 1.2f
-                else -> 0.3f
             }
             
             // Distance check & state transitions

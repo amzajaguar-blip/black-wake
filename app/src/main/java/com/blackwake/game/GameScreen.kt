@@ -62,6 +62,9 @@ fun GameScreen(viewModel: GameViewModel) {
         if (state.mode == GameMode.RUNNING || state.mode == GameMode.PAUSED || state.mode == GameMode.DEBRIEF) {
             GameCanvas(state, viewModel)
             Hud(state, viewModel)
+            if (state.mode == GameMode.RUNNING && state.currentChapterIndex == 0 && state.sectorIndex == 0 && state.tutorialStep < 5) {
+                TutorialCoachmark(state)
+            }
             if (state.showTacticalMap) {
                 TacticalMapOverlay(state, viewModel)
             }
@@ -99,6 +102,35 @@ fun GameScreen(viewModel: GameViewModel) {
             GameMode.DEBRIEF -> DebriefScreen(state, viewModel)
             else -> {}
         }
+    }
+}
+
+@Composable
+fun TutorialCoachmark(state: GameState) {
+    val instruction = when (state.tutorialStep) {
+        0 -> "TRASCINA SUL MARE · SCEGLI LA CORSIA"
+        1 -> "ALLINEATI AL CARBURANTE · PASSACI SOPRA"
+        2 -> "INTEL È L'OBIETTIVO · RACCOGLI I DATI"
+        3 -> "THROTTLE < 20% · LA FIRMA SCENDE"
+        4 -> "PERICOLO · SNR RIVELA · DIV NASCONDE"
+        else -> null
+    } ?: return
+
+    Box(
+        modifier = Modifier.fillMaxSize().padding(top = 18.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Text(
+            text = instruction,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .background(Color.Black.copy(alpha = 0.78f))
+                .border(1.dp, Cyan.copy(alpha = 0.7f))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        )
     }
 }
 

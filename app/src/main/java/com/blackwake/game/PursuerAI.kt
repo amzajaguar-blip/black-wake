@@ -69,9 +69,6 @@ class PursuerAI(
                     changeState(PursuerState.PURSUIT)
                 }
             }
-            PursuerState.ATTACK -> {
-                // Logic for attack state
-            }
             PursuerState.LOST_TARGET -> {
                 // Terminal state, handled by external cleanup
             }

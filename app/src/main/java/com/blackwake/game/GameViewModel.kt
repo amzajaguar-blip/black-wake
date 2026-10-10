@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.abs
-import kotlin.math.pow
 
 enum class GameMode {
     MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF
@@ -30,7 +29,7 @@ enum class EnemyBoatType {
 }
 
 enum class PursuerState {
-    PATROL, SEARCH, DETECTED, PURSUIT, INTERCEPT, ATTACK, LOST_TARGET, SEARCH_AGAIN
+    PATROL, SEARCH, DETECTED, PURSUIT, INTERCEPT, LOST_TARGET, SEARCH_AGAIN
 }
 
 data class Pursuer(
@@ -44,7 +43,6 @@ data class Pursuer(
     var ai: PursuerAI? = null,
     var roll: Float = 0f,
     var timer: Float = 0f,
-    var health: Float = 100f,
     var targetX: Float = 0f
 )
 
@@ -160,13 +158,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var entityIdCounter = 0
-    private var lastTime = System.currentTimeMillis()
     
     var targetPlayerX: Float = 0f // Touch drag target
     private var isDragging = false
     
-    private var isBoostHeld = false
-    private var isSilentHeld = false
     private var isDiveHeld = false
 
     fun setDive(held: Boolean) { isDiveHeld = held }
@@ -300,13 +295,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             if (modValue >= 3) return@update state
             val cost = MODULES.find { it.id == id }?.costs?.get(modValue) ?: return@update state
             if (state.intelBank >= cost) {
-                val newModules = state.modules.copy().apply {
-                    when(id) {
-                        "hull" -> hull++
-                        "tank" -> tank++
-                        "radar" -> radar++
-                        "stealth" -> stealth++
-                    }
+                val newModules = when(id) {
+                    "hull" -> state.modules.copy(hull = state.modules.hull + 1)
+                    "tank" -> state.modules.copy(tank = state.modules.tank + 1)
+                    "radar" -> state.modules.copy(radar = state.modules.radar + 1)
+                    "stealth" -> state.modules.copy(stealth = state.modules.stealth + 1)
+                    else -> state.modules
                 }
                 state.copy(intelBank = state.intelBank - cost, modules = newModules)
             } else {

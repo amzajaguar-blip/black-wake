@@ -387,39 +387,38 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val newSubmerged = isDiveHeld && canSubmerge
         val newFlareActiveTimer = kotlin.math.max(0f, state.flareActiveTimer - dt)
         
-        var newOxygen = state.oxygen
-        var newBattery = state.battery
-        var newEmergencyPowerActive = state.isEmergencyPowerActive
-        val drainRate = if (newEmergencyPowerActive) 10f else -2.5f
-        if (newEmergencyPowerActive) {
-            newBattery = kotlin.math.max(0f, newBattery - dt * drainRate) // deplete battery faster (10 seconds)
-            if (newBattery == 0f) {
-                newEmergencyPowerActive = false
-                newCameraShake = 0.5f
-                triggerVibration(longArrayOf(0, 100, 50, 100))
-                flashMessage("OVERRIDE FALLITO // BATTERIA ESAURITA", "red")
-            }
-        } else {
-            newBattery = kotlin.math.min(100f, newBattery - dt * drainRate) // recharge in 40 seconds
+        val batteryStep = ResourceSystem.stepBattery(
+            battery = state.battery,
+            emergencyActive = state.isEmergencyPowerActive,
+            dt = dt
+        )
+        val newBattery = batteryStep.battery
+        val newEmergencyPowerActive = batteryStep.emergencyActive
+        val drainRate = batteryStep.signedRate
+        if (batteryStep.depletedNow) {
+            newCameraShake = 0.5f
+            triggerVibration(longArrayOf(0, 100, 50, 100))
+            flashMessage("OVERRIDE FALLITO // BATTERIA ESAURITA", "red")
         }
         
-        // Update history periodically
         val newHistory = if (state.runElapsed % 0.5f < dt) {
             (state.batteryHistory + newBattery).takeLast(60)
         } else {
             state.batteryHistory
         }
 
-        val o2DepleteRate = if (newEmergencyPowerActive) 15f else 25f
-        val o2RegenRate = if (newEmergencyPowerActive) 45f else 15f
+        val newOxygen = ResourceSystem.stepOxygen(
+            oxygen = state.oxygen,
+            submerged = newSubmerged,
+            emergencyActive = newEmergencyPowerActive,
+            dt = dt
+        )
         
         var newSubmergedTimer = state.submergedTimer
         var newPressureEventActive = false
         if (newSubmerged) {
-            newOxygen = kotlin.math.max(0f, newOxygen - dt * o2DepleteRate)
             newSubmergedTimer += dt
         } else {
-            newOxygen = kotlin.math.min(100f, newOxygen + dt * o2RegenRate)
             newSubmergedTimer = kotlin.math.max(0f, newSubmergedTimer - dt * 2f)
         }
 
@@ -492,9 +491,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Fuel & Detection update
-        val fuelUsageRate = 0.5f + effectiveThrottle * effectiveThrottle * 6.1f
-        var newFuel = max(0f, state.fuel - dt * fuelUsageRate)
-        var newDrift = state.drift
+        val fuelStep = ResourceSystem.stepFuel(
+            fuel = state.fuel,
+            drift = state.drift,
+            effectiveThrottle = effectiveThrottle,
+            dt = dt
+        )
+        var newFuel = fuelStep.fuel
+        var newDrift = fuelStep.drift
+        if (fuelStep.exhaustedNow) {
+            flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
+        }
         var newDetection = state.detection
         
         // Stealth Mechanic Check: Hiding behind obstacles
@@ -533,13 +540,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         newDetection = max(0.0f, newDetection - dt * decayRate)
 
-        if (state.fuel > 0f && newFuel <= 0f) {
-            newDrift = 3f
-            flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
-        } else if (newFuel <= 0f) {
-            newDrift = max(0f, newDrift - dt)
-        }
-        
         var newHull = state.hull
         if (newFuel <= 0f && newDrift <= 0f && newInvulnerable <= 0f) {
             newHull = max(0f, newHull - 2.3f * dt)

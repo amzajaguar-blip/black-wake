@@ -169,70 +169,13 @@ data class GameState(
 )
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
-    init {
-        SynthAudioEngine.start()
-        // Load on startup if we were in the middle of a run. But wait, mode defaults to MENU.
-        // We'd have to restore the whole game state for a true session resume, but we'll at least restore pursuers.
-        loadPursuers()
-    }
-    private val prefs = getApplication<Application>().getSharedPreferences("PursuerStatePrefs", Context.MODE_PRIVATE)
-
-    private fun savePursuers() {
-        val pursuers = _uiState.value.pursuers
-        val csvList = pursuers.map { p ->
-            PursuerSaveState(
-                id = p.id,
-                type = p.type.name,
-                x = p.x,
-                y = p.y,
-                velocityX = p.velocityX,
-                velocityY = p.velocityY,
-                state = p.state.name,
-                roll = p.roll,
-                timer = p.timer,
-                health = p.health,
-                targetX = p.targetX
-            ).toCsv()
-        }
-        val encoded = csvList.joinToString(";")
-        prefs.edit().putString("saved_pursuers", encoded).apply()
-    }
-
-    fun loadPursuers() {
-        val encoded = prefs.getString("saved_pursuers", "") ?: ""
-        if (encoded.isEmpty()) return
-        
-        val csvList = encoded.split(";")
-        val loadedPursuers = csvList.mapNotNull { csv ->
-            PursuerSaveState.fromCsv(csv)?.let { saveState ->
-                Pursuer(
-                    id = saveState.id,
-                    type = EnemyBoatType.valueOf(saveState.type),
-                    x = saveState.x,
-                    y = saveState.y,
-                    velocityX = saveState.velocityX,
-                    velocityY = saveState.velocityY,
-                    state = PursuerState.valueOf(saveState.state),
-                    ai = PursuerAI(EnemyBoatType.valueOf(saveState.type), PursuerState.valueOf(saveState.state)).apply { timer = saveState.timer },
-                    roll = saveState.roll,
-                    timer = saveState.timer,
-                    health = saveState.health,
-                    targetX = saveState.targetX
-                )
-            }
-        }
-        
-        _uiState.update { it.copy(pursuers = loadedPursuers) }
-    }
-    
-    fun clearPursuers() {
-        prefs.edit().remove("saved_pursuers").apply()
-    }
-
     private val _uiState = MutableStateFlow(GameState())
     val uiState: StateFlow<GameState> = _uiState.asStateFlow()
-    
-    
+
+    init {
+        SynthAudioEngine.start()
+    }
+
     private var entityIdCounter = 0
     private var lastTime = System.currentTimeMillis()
     
@@ -255,9 +198,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startGame() {
+        isDragging = false
+        isDiveHeld = false
+        targetPlayerX = 0f
+        SynthAudioEngine.hasSiren = false
+
         val chapter = CHAPTERS[_uiState.value.currentChapterIndex]
         val sector = chapter.sectors.first()
-                clearPursuers()
         _uiState.update { state ->
             state.copy(
                 mode = GameMode.RUNNING,
@@ -274,6 +221,27 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 sonarRegenTimer = 0f,
                 sonarPingActive = false,
                 sonarPingRadius = 0f,
+                isSubmerged = false,
+                oxygen = 100f,
+                showTacticalMap = false,
+                showEventLog = false,
+                showDamageControl = false,
+                isEmergencyPowerActive = false,
+                battery = 100f,
+                flareCharges = 3,
+                seabedDepth = 50f,
+                submergedTimer = 0f,
+                playerDepth = 0f,
+                pressureEventActive = false,
+                flareActiveTimer = 0f,
+                batteryHistory = emptyList(),
+                batteryDrainRate = 0f,
+                compartments = listOf(
+                    Compartment("BOW", "PRUA"),
+                    Compartment("MID", "CENTRO NAVE"),
+                    Compartment("AFT", "POPPA"),
+                    Compartment("ENG", "MOTORI")
+                ),
                 playerX = 0f,
                 playerVelocityX = 0f,
                 playerRoll = 0f,
@@ -291,6 +259,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 invulnerable = 0f,
                 pursuitCooldown = 0f,
                 pursuers = emptyList(),
+                hasTriggeredPatching = false,
+                leakNodes = emptyList(),
+                proximityPingTimer = 0f,
+                lastDeltaTime = 0f,
+                terminalFeed = emptyList(),
+                isGlobalEmergency = false,
+                isWon = false,
+                debriefReason = "",
                 messageFlash = "CAP. ${chapter.code} // ${sector.title}",
                 messageColor = "cyan"
             )
@@ -316,9 +292,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         SynthAudioEngine.stop()
         super.onCleared()
-        if (_uiState.value.mode == GameMode.RUNNING || _uiState.value.mode == GameMode.PAUSED) {
-            savePursuers()
-        }
     }
     fun togglePause() {
         _uiState.update { state ->
@@ -642,20 +615,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         newDetection = max(0.0f, newDetection - dt * decayRate)
 
-        if (state.fuel <= 0f) { newDrift = max(0f, newDrift - dt) }
-        if (state.fuel == 0f && state.drift <= 0f && newFuel == 0f) {
-            if (state.drift == 0f && state.fuel > 0f) {
-                newDrift = 3f
-                flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
-            }
+        if (state.fuel > 0f && newFuel <= 0f) {
+            newDrift = 3f
+            flashMessage("CARBURANTE ESAURITO // DERIVA", "red")
+        } else if (newFuel <= 0f) {
+            newDrift = max(0f, newDrift - dt)
         }
         
         var newHull = state.hull
-        if (state.fuel == 0f && newDrift <= 0f && newInvulnerable <= 0f) {
+        if (newFuel <= 0f && newDrift <= 0f && newInvulnerable <= 0f) {
             newHull = max(0f, newHull - 2.3f * dt)
             if (newHull <= 0f) { finishRun(false, "Il mare entra nello scafo."); return }
         }
-        if (state.oxygen == 0f && newSubmerged) {
+        if (newOxygen <= 0f && newSubmerged) {
             newHull = max(0f, newHull - 15f * dt) // Severe damage when drowning
             if (newHull <= 0f) { finishRun(false, "Scafo imploso per mancanza d'ossigeno."); return }
             newScreenFlash = 0.3f
@@ -1124,6 +1096,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 comboMultiplier = newComboMult,
                 cameraShake = newCameraShake,
                 screenFlash = newScreenFlash,
+                isSubmerged = newSubmerged,
+                oxygen = newOxygen,
+                sonarCharges = newSonarCharges,
+                sonarRegenTimer = newSonarRegen,
+                sonarPingActive = newSonarActive,
+                sonarPingRadius = newSonarRadius,
                 flareActiveTimer = newFlareActiveTimer,
                 isEmergencyPowerActive = newEmergencyPowerActive,
                 battery = newBattery,

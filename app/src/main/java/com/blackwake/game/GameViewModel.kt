@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.abs
+import kotlin.random.Random
 
 enum class GameMode {
     MENU, BRIEFING, RUNNING, PAUSED, GARAGE, DEBRIEF
@@ -74,6 +75,7 @@ data class GameState(
     val spawnClock: Float = 0f,
     val tutorialStep: Int = 0,
     val difficultyMultiplier: Float = 1.0f,
+    val runSeed: Int = 0,
     
     val sonarCharges: Int = 1,
     val sonarRegenTimer: Float = 0f,
@@ -153,6 +155,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var entityIdCounter = 0
+    private var runRandom: Random = Random.Default
     
     var targetPlayerX: Float = 0f // Touch drag target
     private var isDragging = false
@@ -170,10 +173,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         isDragging = false
     }
 
-    fun startGame() {
+    fun startGame(seed: Int = Random.Default.nextInt()) {
         isDragging = false
         isDiveHeld = false
         targetPlayerX = 0f
+        runRandom = Random(seed)
+        entityIdCounter = 0
         SynthAudioEngine.hasSiren = false
 
         val chapter = CHAPTERS[_uiState.value.currentChapterIndex]
@@ -190,6 +195,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 sectorElapsed = 0f,
                 runElapsed = 0f,
                 tutorialStep = 0,
+                runSeed = seed,
                 sonarCharges = 1 + state.modules.radar,
                 sonarRegenTimer = 0f,
                 sonarPingActive = false,
@@ -552,14 +558,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         var newPeak = max(state.peakDetection, newDetection)
         var newPursuit = state.pursuitCooldown - dt
-        var newEntities = state.entities.toMutableList()
-        var newPursuers = state.pursuers.toMutableList()
+        var newEntities = state.entities.map { it.copy() }.toMutableList()
+        var newPursuers = state.pursuers.map { pursuer ->
+            val sourceAi = pursuer.ai
+            pursuer.copy(
+                ai = sourceAi?.let {
+                    PursuerAI(pursuer.type, it.state).apply { timer = it.timer }
+                }
+            )
+        }.toMutableList()
         
         // --- PURSUER AI UPDATE ---
         val pursuerIter = newPursuers.iterator()
         while(pursuerIter.hasNext()) {
             val p = pursuerIter.next()
-            p.timer += dt
             
             // Basic movement forward
             val speedLimit = when (p.type) {
@@ -642,7 +654,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     newInvulnerable = 2f
                     val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                     if (normalComps.isNotEmpty()) {
-                        val toBreach = normalComps.random()
+                        val toBreach = normalComps.random(runRandom)
                         newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                         flashMessage("ALLAGAMENTO: ${toBreach.name}", "red")
                     }
@@ -656,7 +668,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // Spawn Pursuers dynamically
         if (newDetection >= 0.7f && newPursuers.isEmpty() && newPursuit <= 0f) {
             val type = if (newDetection > 0.9f) EnemyBoatType.ELITE else EnemyBoatType.PATROL
-            newPursuers.add(Pursuer(entityIdCounter++, type, x = state.playerX + (Math.random().toFloat() - 0.5f), y = 120f)) // Spawn from bottom (behind)
+            newPursuers.add(Pursuer(entityIdCounter++, type, x = state.playerX + (runRandom.nextFloat() - 0.5f), y = 120f)) // Spawn from bottom (behind)
             flashMessage("INSEGUITORE IN AVVICINAMENTO", "amber")
             SynthAudioEngine.playTone(400f, 0.5f)
             newPursuit = 5f
@@ -705,19 +717,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 newSpawnClock = 3.0f // Resume normal spawns
             }
         } else if (newSpawnClock <= 0f) {
-            val roll = Math.random().toFloat()
+            val roll = runRandom.nextFloat()
             val threatMulti = if (newDetection > 0.65f) 1.5f else 1f
             val type = when {
                 roll < sector.intelBias * 0.52f -> EntityType.INTEL
                 roll < sector.intelBias * 0.52f + 0.12f -> EntityType.FUEL
-                roll < sector.intelBias * 0.52f + sector.threat * 0.32f * threatMulti -> if (Math.random() > 0.5) EntityType.ENEMY else EntityType.MINE
+                roll < sector.intelBias * 0.52f + sector.threat * 0.32f * threatMulti -> if (runRandom.nextBoolean()) EntityType.ENEMY else EntityType.MINE
                 else -> EntityType.WRECK
             }
-            val lane = (Math.random() * 3).toInt()
+            val lane = runRandom.nextInt(3)
             val xPos = (lane - 1).toFloat()
             
             val eType = if (type == EntityType.ENEMY) {
-                val r = Math.random()
+                val r = runRandom.nextDouble()
                 when {
                     r < 0.3 -> EnemyBoatType.PATROL
                     r < 0.6 -> EnemyBoatType.INTERCEPTOR
@@ -733,10 +745,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 type = type, 
                 lane = lane, 
                 startX = xPos, 
-                z = 96f + (Math.random() * 18).toFloat(),
+                z = 96f + runRandom.nextFloat() * 18f,
                 enemyType = eType
             ))
-            newSpawnClock = max(0.45f, 1.15f - sector.density * 0.48f + (Math.random() * 0.35).toFloat())
+            newSpawnClock = max(0.45f, 1.15f - sector.density * 0.48f + runRandom.nextFloat() * 0.35f)
         }
 
         var newForkExpire = state.forkExpire
@@ -870,7 +882,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                             if (actualDmg > 10f) {
                                 val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                                 if (normalComps.isNotEmpty()) {
-                                    val toBreach = normalComps.random()
+                                    val toBreach = normalComps.random(runRandom)
                                     newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                                     flashMessage("FALLA: ${toBreach.name}", "red")
                                 }
@@ -895,10 +907,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                             newHull = max(0f, newHull - actualDmg)
                             newInvulnerable = 0.86f
                             triggerVibration(longArrayOf(0, 80, 40, 120)) // Medium enemy hit
-                            if (actualDmg > 10f && java.util.Random().nextBoolean()) {
+                            if (actualDmg > 10f && runRandom.nextBoolean()) {
                                 val normalComps = newCompartments.filter { it.state == CompartmentState.NORMAL }
                                 if (normalComps.isNotEmpty()) {
-                                    val toBreach = normalComps.random()
+                                    val toBreach = normalComps.random(runRandom)
                                     newCompartments = newCompartments.map { if (it.id == toBreach.id) it.copy(state = CompartmentState.BREACHED) else it }
                                     flashMessage("ALLAGAMENTO: ${toBreach.name}", "red")
                                 }

@@ -59,16 +59,13 @@ fun GameScreen(viewModel: GameViewModel) {
     GameLoop(state, viewModel)
     
     Box(modifier = Modifier.fillMaxSize().background(SeaColor)) {
-        if (state.mode == GameMode.RUNNING || state.mode == GameMode.PAUSED || state.mode == GameMode.DEBRIEF || state.mode == GameMode.PATCHING) {
+        if (state.mode == GameMode.RUNNING || state.mode == GameMode.PAUSED || state.mode == GameMode.DEBRIEF) {
             GameCanvas(state, viewModel)
             Hud(state, viewModel)
-            if (state.mode == GameMode.PATCHING) {
-                PatchingMiniGameOverlay(state, viewModel)
-            }
-            if (state.showTacticalMap && state.mode != GameMode.PATCHING) {
+            if (state.showTacticalMap) {
                 TacticalMapOverlay(state, viewModel)
             }
-            if (state.showDamageControl && state.mode != GameMode.PATCHING) {
+            if (state.showDamageControl) {
                 DamageControlOverlay(state, viewModel)
             }
         }
@@ -335,10 +332,6 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
     val hudPulseAlpha = if (isHullCritical) (kotlin.math.sin(state.runElapsed * 12f) * 0.4f + 0.3f).toFloat() else 0f
     
     Box(modifier = Modifier.fillMaxSize().border(if (isHullCritical) 4.dp else 0.dp, Red.copy(alpha = hudPulseAlpha))) {
-        if (state.isGlobalEmergency) {
-            val emgPulse = (kotlin.math.sin(state.runElapsed * 8f) * 0.15f + 0.1f).toFloat()
-            Box(modifier = Modifier.fillMaxSize().background(Red.copy(alpha = emgPulse)))
-        }
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
@@ -400,15 +393,6 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                     modifier = Modifier.border(1.dp, Cyan)
                 ) {
                     Text(if (state.showTacticalMap) "CHIUDI MAPPA" else "MAPPA TATTICA", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { viewModel.toggleEventLog() },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (state.showEventLog) Cyan.copy(alpha=0.3f) else Color.Black.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.border(1.dp, Cyan)
-                ) {
-                    Text(if (state.showEventLog) "CHIUDI ARCHIVIO" else "LOG DI BORDO", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 val hasBreach = state.compartments.any { it.state == CompartmentState.BREACHED }
@@ -526,18 +510,6 @@ fun Hud(state: GameState, viewModel: GameViewModel) {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Global Emergency
-                val emgColor = if (state.isGlobalEmergency) Red else Amber
-                val emgFlash = if (state.isGlobalEmergency) (kotlin.math.sin(state.runElapsed * 15f) * 0.5f + 0.5f).toFloat() else 1f
-                Button(
-                    onClick = { viewModel.toggleGlobalEmergency() },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (state.isGlobalEmergency) Red.copy(alpha=0.3f) else Color.Black.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.border(1.dp, emgColor.copy(alpha=emgFlash))
-                ) {
-                    Text("ALLARME", color = emgColor.copy(alpha=emgFlash), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
-
                 if (state.comboMultiplier > 1) {
                     Text("COMBO x${state.comboMultiplier}", color = Cyan, fontWeight = FontWeight.Bold)
                 }
@@ -1337,80 +1309,18 @@ fun ProfilerDashboard(state: GameState) {
 
 @Composable
 fun GameLoop(state: GameState, viewModel: GameViewModel) {
-    if (state.mode == GameMode.RUNNING || state.mode == GameMode.PATCHING) {
+    if (state.mode == GameMode.RUNNING) {
         LaunchedEffect(state.mode) {
             var lastFrameTime = withFrameNanos { it }
             while (isActive) {
                 val frameTime = withFrameNanos { it }
                 val delta = (frameTime - lastFrameTime) / 1_000_000_000f
                 lastFrameTime = frameTime
-                val safeDelta = kotlin.math.min(delta, 0.1f)
-                if (state.mode == GameMode.RUNNING) {
-                    viewModel.updateGame(safeDelta)
-                } else if (state.mode == GameMode.PATCHING) {
-                    viewModel.updatePatching(safeDelta)
-                }
+                viewModel.updateGame(kotlin.math.min(delta, 0.1f))
             }
         }
     }
 }
-
-@Composable
-fun PatchingMiniGameOverlay(state: GameState, viewModel: GameViewModel) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f))
-    ) {
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "EMERGENZA SCAFO - CHIUDI LE FALLE!",
-                color = Red,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-        }
-        
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val w = maxWidth.value
-            val h = maxHeight.value
-            state.leakNodes.forEach { node ->
-                if (!node.fixed) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = (node.x * w).dp - 24.dp, y = (node.y * h).dp - 24.dp)
-                            .size(48.dp)
-                            .background(Red.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape)
-                            .border(2.dp, Color.White, androidx.compose.foundation.shape.CircleShape)
-                            .clickable {
-                                viewModel.patchNode(node.id)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("PATCH", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = (node.x * w).dp - 24.dp, y = (node.y * h).dp - 24.dp)
-                            .size(48.dp)
-                            .background(Color.Green.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape)
-                            .border(2.dp, Color.Green, androidx.compose.foundation.shape.CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("✓", color = Color.White, fontSize = 24.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
 
 @Composable
 fun VisualRadar(state: GameState) {
@@ -2029,53 +1939,6 @@ fun VerticalDepthGauge(state: GameState, modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
-        }
-    }
-}
-
-@Composable
-fun EventLogOverlay(state: GameState, viewModel: GameViewModel) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
-            .clickable(enabled = true) { viewModel.toggleEventLog() }
-    ) {
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxHeight(0.8f)
-                .fillMaxWidth(0.6f)
-                .border(2.dp, Cyan)
-                .background(Color(0xFF031A33).copy(alpha = 0.95f))
-                .padding(24.dp)
-                .clickable(enabled = false) {}
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("ARCHIVIO EVENTI DI BORDO", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                Text("${state.terminalFeed.size} VOCI", color = Cyan.copy(alpha=0.5f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Cyan.copy(alpha=0.5f)))
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(state.terminalFeed.size) { index ->
-                    val msg = state.terminalFeed[index]
-                    val isCritical = msg.color == "red"
-                    val flashAlpha = if (isCritical) (kotlin.math.sin(state.runElapsed * 10f) * 0.2f + 0.8f).toFloat() else 1f
-                    val tColor = when (msg.color) { "red" -> Red.copy(alpha = flashAlpha); "amber" -> Amber; else -> Cyan }
-                    
-                    val mins = (msg.timestamp / 60).toInt()
-                    val secs = (msg.timestamp % 60).toInt()
-                    val timeStr = String.format("T+%02d:%02d", mins, secs)
-                    
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                        Text(timeStr, color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(60.dp))
-                        Text(msg.text, color = tColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
         }
     }
 }

@@ -150,10 +150,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(progressionRepository.load())
     val uiState: StateFlow<GameState> = _uiState.asStateFlow()
 
-    init {
-        SynthAudioEngine.start()
-    }
-
     private var entityIdCounter = 0
     private var runRandom: Random = Random.Default
     
@@ -180,6 +176,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         runRandom = Random(seed)
         entityIdCounter = 0
         SynthAudioEngine.hasSiren = false
+        SynthAudioEngine.start()
 
         val chapter = CHAPTERS[_uiState.value.currentChapterIndex]
         val sector = chapter.sectors.first()
@@ -267,17 +264,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun togglePause() {
         _uiState.update { state ->
-            if (state.mode == GameMode.RUNNING) {
-                
-                state.copy(mode = GameMode.PAUSED)
-            } else if (state.mode == GameMode.PAUSED) {
-                
-                state.copy(mode = GameMode.RUNNING)
-            } else state
+            when (state.mode) {
+                GameMode.RUNNING -> {
+                    SynthAudioEngine.stop()
+                    state.copy(mode = GameMode.PAUSED)
+                }
+                GameMode.PAUSED -> {
+                    SynthAudioEngine.start()
+                    state.copy(mode = GameMode.RUNNING)
+                }
+                else -> state
+            }
         }
     }
 
-    fun openMenu() { ; _uiState.update { it.copy(mode = GameMode.MENU) } }
+    fun pauseForLifecycle() {
+        _uiState.update { state ->
+            if (state.mode == GameMode.RUNNING) {
+                SynthAudioEngine.stop()
+                state.copy(mode = GameMode.PAUSED)
+            } else {
+                state
+            }
+        }
+    }
+
+    fun openMenu() {
+        SynthAudioEngine.stop()
+        _uiState.update { it.copy(mode = GameMode.MENU) }
+    }
     fun openBriefing(chapterIndex: Int) { _uiState.update { it.copy(mode = GameMode.BRIEFING, currentChapterIndex = chapterIndex) } }
     fun openGarage() { _uiState.update { it.copy(mode = GameMode.GARAGE) } }
     
@@ -990,7 +1005,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        SynthAudioEngine.engineRpm = effectiveThrottle
+        SynthAudioEngine.isBoosting = boost
+        SynthAudioEngine.detectionLevel = newDetection
+        SynthAudioEngine.pursuerCount = newPursuers.count { it.state != PursuerState.LOST_TARGET }
         SynthAudioEngine.hasSiren = newDetection >= 0.80f || newHull < 25f
+        SynthAudioEngine.isOxygenLow = newOxygen < 20f
+        SynthAudioEngine.hullIntegrity = newHull
 
         _uiState.update { s ->
             s.copy(

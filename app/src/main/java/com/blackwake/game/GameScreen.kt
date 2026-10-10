@@ -56,17 +56,12 @@ val BlackTideColor = Color(0xFF010A14) // Navy Black
 @Composable
 fun GameScreen(viewModel: GameViewModel) {
     val state by viewModel.uiState.collectAsState()
-    var showProfiler by remember { mutableStateOf(false) }
-    
     GameLoop(state, viewModel)
     
     Box(modifier = Modifier.fillMaxSize().background(SeaColor)) {
         if (state.mode == GameMode.RUNNING || state.mode == GameMode.PAUSED || state.mode == GameMode.DEBRIEF || state.mode == GameMode.PATCHING) {
             GameCanvas(state, viewModel)
             Hud(state, viewModel)
-            if (showProfiler) {
-                ProfilerDashboard(state)
-            }
             if (state.mode == GameMode.PATCHING) {
                 PatchingMiniGameOverlay(state, viewModel)
             }
@@ -76,15 +71,6 @@ fun GameScreen(viewModel: GameViewModel) {
             if (state.showDamageControl && state.mode != GameMode.PATCHING) {
                 DamageControlOverlay(state, viewModel)
             }
-        }
-        
-        Button(
-            onClick = { showProfiler = !showProfiler },
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.5f)),
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 80.dp, end = 16.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-        ) {
-            Text("PROFILER", color = Color.White, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
         }
         
         // Screen Flash Effect
@@ -125,7 +111,7 @@ fun MainMenu(state: GameState, viewModel: GameViewModel) {
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        Text("MAREA NERA", fontSize = 48.sp, color = Color.White, fontWeight = FontWeight.Bold)
+        Text("BLACK WAKE", fontSize = 48.sp, color = Color.White, fontWeight = FontWeight.Bold)
         Text("OPERAZIONE 07.14N", color = Amber, fontSize = 14.sp, letterSpacing = 2.sp)
         Spacer(modifier = Modifier.height(24.dp))
         

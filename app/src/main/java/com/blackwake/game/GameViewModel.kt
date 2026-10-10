@@ -64,8 +64,6 @@ data class Entity(
 enum class CompartmentState { NORMAL, SEALED, BREACHED }
 data class Compartment(val id: String, val name: String, val state: CompartmentState = CompartmentState.NORMAL)
 
-data class TerminalMessage(val text: String, val color: String, val timestamp: Float)
-
 data class GameState(
     val mode: GameMode = GameMode.MENU,
     val currentChapterIndex: Int = 0,
@@ -95,8 +93,6 @@ data class GameState(
     val playerDepth: Float = 0f,
     val pressureEventActive: Boolean = false,
     val flareActiveTimer: Float = 0f,
-    val batteryHistory: List<Float> = listOf(),
-    val batteryDrainRate: Float = 0f,
     val compartments: List<Compartment> = listOf(
         Compartment("BOW", "PRUA"),
         Compartment("MID", "CENTRO NAVE"),
@@ -142,7 +138,6 @@ data class GameState(
     
     val messageFlash: String? = null,
     val messageColor: String = "cyan",
-    val terminalFeed: List<TerminalMessage> = emptyList(),
     
     val isWon: Boolean = false,
     val debriefReason: String = ""
@@ -211,8 +206,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 playerDepth = 0f,
                 pressureEventActive = false,
                 flareActiveTimer = 0f,
-                batteryHistory = emptyList(),
-                batteryDrainRate = 0f,
                 compartments = listOf(
                     Compartment("BOW", "PRUA"),
                     Compartment("MID", "CENTRO NAVE"),
@@ -238,7 +231,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 pursuers = emptyList(),
                 proximityPingTimer = 0f,
                 lastDeltaTime = 0f,
-                terminalFeed = emptyList(),
                 isWon = false,
                 debriefReason = "",
                 messageFlash = "CAP. ${chapter.code} // ${sector.title}",
@@ -394,19 +386,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         )
         val newBattery = batteryStep.battery
         val newEmergencyPowerActive = batteryStep.emergencyActive
-        val drainRate = batteryStep.signedRate
         if (batteryStep.depletedNow) {
             newCameraShake = 0.5f
             triggerVibration(longArrayOf(0, 100, 50, 100))
             flashMessage("OVERRIDE FALLITO // BATTERIA ESAURITA", "red")
         }
         
-        val newHistory = if (state.runElapsed % 0.5f < dt) {
-            (state.batteryHistory + newBattery).takeLast(60)
-        } else {
-            state.batteryHistory
-        }
-
         val newOxygen = ResourceSystem.stepOxygen(
             oxygen = state.oxygen,
             submerged = newSubmerged,
@@ -1025,8 +1010,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 flareActiveTimer = newFlareActiveTimer,
                 isEmergencyPowerActive = newEmergencyPowerActive,
                 battery = newBattery,
-                batteryHistory = newHistory,
-                batteryDrainRate = drainRate,
                 seabedDepth = newSeabedDepth,
                 submergedTimer = newSubmergedTimer,
                 playerDepth = newPlayerDepth,
@@ -1063,10 +1046,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun flashMessage(msg: String, color: String) {
         _uiState.update { 
             it.copy(
-                messageFlash = msg, 
-                messageColor = color,
-                terminalFeed = (listOf(TerminalMessage(msg, color, it.runElapsed)) + it.terminalFeed).take(200)
-            ) 
+                messageFlash = msg,
+                messageColor = color
+            )
         }
         viewModelScope.launch {
             delay(1500)

@@ -3,17 +3,24 @@ package com.blackwake.game
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+    private lateinit var gameViewModel: GameViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        gameViewModel = ViewModelProvider(this)[GameViewModel::class.java]
+        enterImmersiveMode()
+
         setContent {
             MaterialTheme(
                 colorScheme = MaterialTheme.colorScheme.copy(
@@ -25,10 +32,30 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel: GameViewModel = viewModel()
-                    GameScreen(viewModel)
+                    GameScreen(gameViewModel)
                 }
             }
+        }
+    }
+
+    override fun onPause() {
+        gameViewModel.pauseForLifecycle()
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            enterImmersiveMode()
+        }
+    }
+
+    private fun enterImmersiveMode() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 }

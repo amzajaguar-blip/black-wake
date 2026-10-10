@@ -117,3 +117,8 @@ client/public/__manus__/version.json
 android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
 android/app/src/main/assets/public/
+
+# Gradle local state
+.gradle/
+**/.gradle/
+local.properties

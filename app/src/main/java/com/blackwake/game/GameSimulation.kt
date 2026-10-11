@@ -49,7 +49,7 @@ object GameSimulation {
         TutorialStep(10.5f, listOf(EntityType.ENEMY to 0, EntityType.ENEMY to 2), "LEVA BASSA: SILENZIO. LA FIRMA CALA")
     )
 
-    fun sonarCooldownSeconds(modules: Modules): Float = 6f - modules.radar * 1f
+    fun sonarCooldownSeconds(modules: Modules): Float = (6f - modules.radar.coerceAtMost(2)).coerceAtLeast(4f)
 
     fun bankedIntel(won: Boolean, intel: Int): Int = if (won) intel else (intel * 0.4f).toInt()
 
@@ -83,6 +83,74 @@ object GameSimulation {
         )
         val text = if (dazzled > 0) "RAZZO // INSEGUITORI ACCECATI" else "RAZZO // ACQUA ILLUMINATA"
         return withMessages(next, listOf(text to MessageTone.WARNING)) to listOf(GameEvent.Noise(0.35f, 0.5f))
+    }
+
+    fun launchSonar(run: RunState): Pair<RunState, List<GameEvent>> {
+        val sonar = run.sonar
+        if (!sonar.active && sonar.cooldown <= 0f) {
+            val modules = run.progress.modules
+            val cooldown = sonarCooldownSeconds(modules)
+            val pingOriginX = run.playerX
+            val pingOriginZ = 0f // player is at z=0
+            
+            // Snapshot entities within range
+            val contactedEntities = run.entities.filter { entity ->
+                val dx = entity.x - pingOriginX
+                val dz = entity.z - pingOriginZ
+                val distanceSq = dx * dx + dz * dz
+                distanceSq <= PING_RANGE * PING_RANGE
+            }.map { entity ->
+                EntitySnapshot(
+                    id = entity.id,
+                    type = entity.type,
+                    lane = entity.lane,
+                    x = entity.x,
+                    z = entity.z
+                )
+            }
+            
+            // Snapshot pursuers within range
+            val contactedPursuers = run.pursuers.filter { pursuer ->
+                val pursuerZ = (PLAYER_Y - pursuer.y) / 0.85f
+                val dx = pursuer.x - pingOriginX
+                val dz = pursuerZ - pingOriginZ
+                val distanceSq = dx * dx + dz * dz
+                distanceSq <= PING_RANGE * PING_RANGE
+            }.map { pursuer ->
+                val pursuerZ = (PLAYER_Y - pursuer.y) / 0.85f
+                val lane = ((pursuer.x + 1f).roundToInt().coerceIn(0, 2))
+                PursuerSnapshot(
+                    id = pursuer.id,
+                    type = pursuer.type,
+                    lane = lane,
+                    x = pursuer.x,
+                    z = pursuerZ
+                )
+            }
+            
+            val nextSonar = SonarState(
+                cooldown = cooldown,
+                active = true,
+                radius = 0f,
+                contactedEntities = contactedEntities,
+                contactedPursuers = contactedPursuers,
+                contactTimer = 3f,
+                pulsedHazardIds = emptySet(),
+                pingOriginX = run.playerX,
+                pingStartTime = run.runElapsed
+            )
+            
+            val nextRun = run.copy(sonar = nextSonar)
+            val events = mutableListOf<GameEvent>()
+            events += GameEvent.Tone(1320f, 0.22f, 0.3f) // sonar ping sound
+            // Apply +0.12 detection cost immediately
+            val updatedRun = nextRun.copy(
+                detection = (nextRun.detection + 0.12f).coerceIn(0f, 1f),
+                peakDetection = max(nextRun.peakDetection, nextRun.detection + 0.12f)
+            )
+            return withMessages(updatedRun, emptyList()) to events
+        }
+        return run to emptyList()
     }
 
     fun step(prev: RunState, chapterIndex: Int, progress: Progress, input: RunInput, dt: Float, rng: Random): StepResult {
@@ -125,27 +193,56 @@ object GameSimulation {
         val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
-        var cooldown = max(0f, prev.sonar.cooldown - dt)
-        var pingActive = prev.sonar.active
-        var pingRadius = prev.sonar.radius
-        if (prev.hunted && !pingActive && cooldown <= 0f) {
-            pingActive = true
-            pingRadius = 0f
-            cooldown = sonarCooldownSeconds(modules)
-            events += GameEvent.Tone(1320f, 0.22f, 0.3f)
-        }
+        val prevSonar = prev.sonar
+        var cooldown = max(0f, prevSonar.cooldown - dt)
+        var pingActive = prevSonar.active
+        var pingRadius = prevSonar.radius
+        var contactedEntities = prevSonar.contactedEntities
+        var contactedPursuers = prevSonar.contactedPursuers
+        var contactTimer = max(0f, prevSonar.contactTimer - dt)
+        var pulsedHazardIds = prevSonar.pulsedHazardIds
+        
+        // Update contacted entities and pursuers: remove those that are no longer present
+        val currentEntityIds = prev.entities.map { it.id }.toSet()
+        contactedEntities = contactedEntities.filter { it.id in currentEntityIds }
+        
+        val currentPursuerIds = prev.pursuers.map { it.id }.toSet()
+        contactedPursuers = contactedPursuers.filter { it.id in currentPursuerIds }
+        
         if (pingActive) {
             val oldRadius = pingRadius
             pingRadius += dt * PING_SPEED
-            if (prev.entities.any { it.type.isHazard && it.z > oldRadius && it.z <= pingRadius }) {
+            // Check for hazards that the ping front passes over (for haptic)
+            val newPulsedHazards = prev.entities.filter { it.type.isHazard }
+                .filter { hazard ->
+                    val hazardZ = hazard.z
+                    hazardZ > oldRadius && hazardZ <= pingRadius &&
+                    !pulsedHazardIds.contains(hazard.id)
+                }
+            for (hazard in newPulsedHazards) {
                 events += GameEvent.Vibrate(listOf(0, 30))
+                pulsedHazardIds += hazard.id
             }
             if (pingRadius >= PING_RANGE) {
                 pingActive = false
                 pingRadius = 0f
+                // Clear contacts when ping ends
+                contactedEntities = emptyList()
+                contactedPursuers = emptyList()
+                contactTimer = 0f
             }
         }
-        val sonar = SonarState(cooldown, pingActive, pingRadius)
+        val sonar = SonarState(
+            cooldown = cooldown,
+            active = pingActive,
+            radius = pingRadius,
+            contactedEntities = contactedEntities,
+            contactedPursuers = contactedPursuers,
+            contactTimer = contactTimer,
+            pulsedHazardIds = pulsedHazardIds,
+            pingOriginX = prev.sonar.pingOriginX,
+            pingStartTime = prev.sonar.pingStartTime
+        )
 
         // --- Detection
         val hiding = prev.entities.any { it.type == EntityType.WRECK && it.z > 0f && it.z < 25f && abs(it.x - prev.playerX) < 0.6f }
@@ -192,7 +289,15 @@ object GameSimulation {
         // --- Pursuers
         var nextId = prev.nextId
         var pursuitCooldown = prev.pursuitCooldown - dt
-        val ctx = PursuerAI.Context(prev.playerX, prev.playerVelocityX, detection, silent || submerged, dt)
+        val ctx = PursuerAI.Context(
+            prev.playerX,
+            prev.playerVelocityX,
+            detection,
+            silent || submerged,
+            dt,
+            prev.sonar.active && (prev.runElapsed - prev.sonar.pingStartTime) <= 2f,
+            prev.sonar.pingOriginX
+        )
         val pursuers = ArrayList<Pursuer>(prev.pursuers.size + 1)
         for (p in prev.pursuers) {
             var next = PursuerAI.step(p, ctx, prev.pursuers)

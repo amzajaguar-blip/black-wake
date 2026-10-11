@@ -83,11 +83,39 @@ data class DiveState(
     val lockedOut: Boolean = false
 )
 
+data class EntitySnapshot(
+    val id: Int,
+    val type: EntityType,
+    val lane: Int,
+    val x: Float,
+    val z: Float
+)
+
+data class PursuerSnapshot(
+    val id: Int,
+    val type: EnemyBoatType,
+    val lane: Int,
+    val x: Float,
+    val z: Float
+)
+
 data class SonarState(
     val cooldown: Float = 0f,
     val active: Boolean = false,
     /** Ping front, in the same distance units as [Entity.z]. */
-    val radius: Float = 0f
+    val radius: Float = 0f,
+    /** Snapshot of entities within range at ping activation. */
+    val contactedEntities: List<EntitySnapshot> = emptyList(),
+    /** Snapshot of pursuers within range at ping activation. */
+    val contactedPursuers: List<PursuerSnapshot> = emptyList(),
+    /** Timer for contact expiration (3 seconds). */
+    val contactTimer: Float = 3f,
+    /** Set of hazard IDs that have already pulsed for haptic feedback. */
+    val pulsedHazardIds: Set<Int> = emptySet(),
+    /** X position of the ping origin (player's x at activation). */
+    val pingOriginX: Float = 0f,
+    /** Time when ping was activated (for investigation timing). */
+    val pingStartTime: Float = 0f
 )
 
 data class FlareState(

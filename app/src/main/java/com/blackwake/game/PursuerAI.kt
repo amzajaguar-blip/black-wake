@@ -38,7 +38,11 @@ object PursuerAI {
         val detection: Float,
         /** Player is running silent or submerged. */
         val hidden: Boolean,
-        val dt: Float
+        val dt: Float,
+        /** Sonar investigation active: if true, pursuers in SEARCH state investigate the ping origin. */
+        val sonarInvestigationActive: Boolean = false,
+        /** Origin X of the ping for investigation. */
+        val sonarInvestigationOriginX: Float = 0f
     )
 
     fun spec(type: EnemyBoatType): Spec = when (type) {
@@ -115,8 +119,9 @@ object PursuerAI {
             }
 
             PursuerState.SEARCH, PursuerState.SEARCH_AGAIN -> {
+                val investigationLockX = if (ctx.sonarInvestigationActive) ctx.sonarInvestigationOriginX else p.lockX
                 val sweep = sin(t * 2f) * 0.5f
-                val moved = p.trackX((p.lockX + sweep).coerceIn(-1f, 1f), 1.5f, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
+                val moved = p.trackX((investigationLockX + sweep).coerceIn(-1f, 1f), 1.5f, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
                 when {
                     reacquired -> moved.enter(PursuerState.PURSUIT)
                     p.state == PursuerState.SEARCH && t > SEARCH_SECONDS -> moved.enter(PursuerState.SEARCH_AGAIN)

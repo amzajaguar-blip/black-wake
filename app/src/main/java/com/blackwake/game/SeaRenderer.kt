@@ -427,6 +427,32 @@ fun DrawScope.drawSea(
         }
         drawRect(color.copy(alpha = run.screenFlash * 0.28f))
     }
+
+    // Sonar contacts: show contacted entities and pursuers
+    for (contact in run.sonar.contactedEntities) {
+        val e = run.entities.firstOrNull { it.id == contact.id }
+        if (e != null) {
+            val s = depth(e.z)
+            val cx = screenX(e.x, s)
+            val cy = screenY(s)
+            drawEntity(e, s, cx, cy, u, run, flare, fx, textMeasurer)
+            // Sonar contact indicator: cyan outline
+            val r = (6f + 22f * s) * u
+            drawCircle(Palette.Cyan.copy(alpha = 0.6f), r * 1.8f, Offset(cx, cy), style = Stroke(2f * u))
+        }
+    }
+    for (contact in run.sonar.contactedPursuers) {
+        val p = run.pursuers.firstOrNull { it.id == contact.id }
+        if (p != null) {
+            val s = p.y / GameSimulation.PLAYER_Y
+            val cx = screenX(p.x, s)
+            val cy = screenY(s)
+            drawPursuer(p, u, cx, cy, run, flare, fx)
+            // Sonar contact indicator: cyan outline
+            val r = (8f + 14f * s) * u
+            drawCircle(Palette.Cyan.copy(alpha = 0.6f), r * 1.8f, Offset(cx, cy), style = Stroke(2f * u))
+        }
+    }
 }
 
 private fun DrawScope.drawEntity(

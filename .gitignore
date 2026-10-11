@@ -42,3 +42,4 @@ node_modules/
 .manus/
 .manus-logs/
 .project-config.json
+.qwen/

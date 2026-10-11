@@ -15,8 +15,8 @@ class GameSimulationTest {
     /** Chapter 02: no scripted tutorial. Regular spawns are pushed far into the future. */
     private fun quietRun(chapter: Int = 1): RunState = GameSimulation.newRun(chapter, progress).copy(spawnClock = 1_000f)
 
-    private fun step(run: RunState, input: RunInput = RunInput(), dt: Float = FRAME, chapter: Int = 1): StepResult =
-        GameSimulation.step(run, chapter, progress, input, dt, rng)
+    private fun step(state: RunState, input: RunInput = RunInput(), dt: Float = FRAME, chapter: Int = 1): StepResult =
+        GameSimulation.step(state, chapter, progress, input, dt, rng)
 
     /** Runs whole seconds of simulation; optionally keeps the sea empty to isolate a subsystem. */
     private fun simulate(
@@ -352,7 +352,7 @@ class GameSimulationTest {
         val run = quietRun().copy(detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Advance time slightly to allow new spawns
-        val stepped = step(sonarRun, FRAME, FRAME)
+        val stepped = step(sonarRun, dt = FRAME)
         val runWithSpawn = stepped.run.copy(
             entities = stepped.run.entities + Entity(999, EntityType.INTEL, 1, 0f, 150f)
         )
@@ -365,13 +365,13 @@ class GameSimulationTest {
     @Test
     fun sonarContactsExpireAfterThreeSeconds() {
         val run = quietRun().copy(detection = 0.1f)
-        var sonarRun = GameSimulation.launchSonar(run).run
+        var (sonarRun, _) = GameSimulation.launchSonar(run)
         // Advance time to just before contact expiration
-        var stepped = step(sonarRun, 2.9f)
+        var stepped = step(sonarRun, dt = 2.9f)
         sonarRun = stepped.run
         assertTrue(sonarRun.sonar.contactTimer > 0f)
         // Advance past expiration
-        stepped = step(sonarRun, 0.2f)
+        stepped = step(sonarRun, dt = 0.2f)
         sonarRun = stepped.run
         assertEquals(0f, sonarRun.sonar.contactTimer, 0.001f)
         // Contacts should still be present (we don't auto-clear them on timeout in this implementation)
@@ -386,7 +386,7 @@ class GameSimulationTest {
         // Cooldown should start at 6s (since radar=0 -> 6 - min(0,2) = 6)
         assertEquals(6f, sonarRun.sonar.cooldown, 0.001f)
         // Advance time by 1 second
-        val stepped = step(sonarRun, 1.0f)
+        val stepped = step(sonarRun, dt = 1.0f)
         assertEquals(5f, stepped.run.sonar.cooldown, 0.001f)
     }
 
@@ -398,11 +398,11 @@ class GameSimulationTest {
         var events = listOf<GameEvent>()
         // Simulate until the ping reaches the hazard
         // Ping speed is 80 units/s, distance 50 units -> time = 50/80 = 0.625s
-        var stepped = step(sonarRun, 0.6f)
+        var stepped = step(sonarRun, dt = 0.6f)
         sonarRun = stepped.run
         events = stepped.events
         assertFalse("haptic should not have fired yet", events.any { it is GameEvent.Vibrate })
-        stepped = step(sonarRun, 0.05f) // total 0.65f
+        stepped = step(sonarRun, dt = 0.05f) // total 0.65f
         sonarRun = stepped.run
         events = stepped.events
         assertTrue("haptic should have fired once", events.any { it is GameEvent.Vibrate })

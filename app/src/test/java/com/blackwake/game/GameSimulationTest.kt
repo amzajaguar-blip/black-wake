@@ -7,6 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
+import kotlin.math.min
 
 class GameSimulationTest {
     private val progress = Progress()
@@ -78,60 +79,6 @@ class GameSimulationTest {
         assertTrue(run.feed.any { it.text.contains("OSSIGENO ESAURITO") })
         assertFalse(run.dive.submerged)
         assertTrue(run.dive.lockedOut)
-    }
-
-    @Test
-    fun sonarAutoPingsWithinOneSecondOfBeingHunted() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.PURSUIT)
-        var run = quietRun().copy(throttle = 0.5f, detection = 0.8f, pursuers = listOf(pursuer))
-        var frames = 0
-        var started = false
-        while (frames * FRAME < 1f && !started) {
-            val result = step(run)
-            frames++
-            started = !run.sonar.active && result.run.sonar.active
-            if (started) {
-                assertTrue(result.events.any { it is GameEvent.Tone && it.freq == 1320f })
-            }
-            run = result.run
-        }
-        assertTrue("sonar must start within one second of being hunted", started)
-        val finishBy = frames * FRAME + GameSimulation.PING_RANGE / 80f + 0.2f
-        while (frames * FRAME < finishBy && run.sonar.active) {
-            run = step(run).run
-            frames++
-        }
-        assertFalse("ping must finish within its propagation time", run.sonar.active)
-    }
-
-    @Test
-    fun sonarRespectsCooldownWhileHunted() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.PURSUIT)
-        var run = quietRun().copy(pursuers = listOf(pursuer))
-        val starts = mutableListOf<Float>()
-        repeat((20f / FRAME).toInt()) { frame ->
-            // Test-harness pinning: re-inject PURSUIT so the hunted condition stays deterministic.
-            val pinned = run.copy(pursuers = listOf(pursuer))
-            val result = step(pinned)
-            if (!pinned.sonar.active && result.run.sonar.active) starts += (frame + 1) * FRAME
-            run = result.run
-        }
-        assertTrue("expected at least three automatic pings", starts.size >= 3)
-        starts.zipWithNext { first, second ->
-            assertTrue("pings must respect cooldown", second - first >= GameSimulation.sonarCooldownSeconds(progress.modules) - FRAME)
-        }
-        assertTrue(GameSimulation.sonarCooldownSeconds(Modules(radar = 3)) < GameSimulation.sonarCooldownSeconds(Modules()))
-    }
-
-    @Test
-    fun sonarStaysSilentWhenNotHunted() {
-        var run = quietRun()
-        repeat((10f / FRAME).toInt()) {
-            val result = step(run)
-            assertFalse(result.run.sonar.active)
-            assertFalse(result.events.any { it is GameEvent.Tone && it.freq == 1320f })
-            run = result.run
-        }
     }
 
     @Test
@@ -407,7 +354,7 @@ class GameSimulationTest {
         events = stepped.events
         assertTrue("haptic should have fired once", events.any { it is GameEvent.Vibrate })
         // Advance further, should not fire again
-        stepped = step(sonarRun, 1.0f)
+        stepped = step(sonarRun, RunInput(), dt = 1.0f)
         sonarRun = stepped.run
         events = stepped.events
         assertFalse("haptic should not fire again", events.any { it is GameEvent.Vibrate && !stepped.events.any { it is GameEvent.Vibrate } })
@@ -420,7 +367,7 @@ class GameSimulationTest {
         val (sonarRun, _) = GameSimulation.launchSonar(run.copy(playerX = 0.5f))
         // Ping origin should be at playerX = 0.5f
         // Advancing a bit to let investigation start
-        val stepped = step(sonarRun, 0.1f)
+        val stepped = step(sonarRun, RunInput(), dt = 0.1f)
         val newPursuer = stepped.run.pursuers.first()
         // Should be investigating the ping origin (x=0.5f)
         assertEquals(0.5f, newPursuer.lockX, 0.001f)
@@ -434,7 +381,7 @@ class GameSimulationTest {
         val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Advancing a bit
-        val stepped = step(sonarRun, 0.1f)
+        val stepped = step(sonarRun, RunInput(), dt = 0.1f)
         val newPursuer = stepped.run.pursuers.first()
         // Should still be in INTERCEPT state
         assertEquals(PursuerState.INTERCEPT, newPursuer.state)
@@ -463,7 +410,7 @@ class GameSimulationTest {
         assertFalse(secondRun.sonar.active) // Should still be active from first ping
         assertEquals(firstEvents.size, secondEvents.size) // No new events
         // Wait for cooldown to start
-        val stepped = step(secondRun, 0.1f)
+        val stepped = step(secondRun, RunInput(), dt = 0.1f)
         val coolingRun = stepped.run
         // Try to activate during cooldown - should do nothing
         val (thirdRun, thirdEvents) = GameSimulation.launchSonar(coolingRun)

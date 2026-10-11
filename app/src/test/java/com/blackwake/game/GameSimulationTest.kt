@@ -328,7 +328,7 @@ class GameSimulationTest {
 
     @Test
     fun sonarCooldownIsSixSecondsFromActivation() {
-        val run = quietRun().copy(progress = Progress(modules = Modules(radar = 0)))
+        val run = quietRun().copy(modules = Modules(radar = 0))
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Cooldown should start at 6s (since radar=0 -> 6 - min(0,2) = 6)
         assertEquals(6f, sonarRun.sonar.cooldown, 0.001f)

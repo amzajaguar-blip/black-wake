@@ -119,7 +119,7 @@ object GameSimulation {
                 distanceSq <= PING_RANGE * PING_RANGE
             }.map { pursuer ->
                 val pursuerZ = (PLAYER_Y - pursuer.y) / 0.85f
-                val lane = ((pursuer.x + 1f).round().toInt().coerceIn(0, 2))
+                val lane = Math.round(pursuer.x + 1f).coerceIn(0, 2)
                 PursuerSnapshot(
                     id = pursuer.id,
                     type = pursuer.type,

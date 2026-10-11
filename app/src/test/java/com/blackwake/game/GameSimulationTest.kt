@@ -341,7 +341,7 @@ class GameSimulationTest {
     fun sonarHazardHapticFiresOncePerHazardId() {
         val hazard = Entity(id = 1, type = EntityType.MINE, lane = 1, x = 0f, z = 50f)
         val run = quietRun().copy(entities = listOf(hazard), detection = 0.1f)
-        var sonarRun = GameSimulation.launchSonar(run).run
+        var sonarRun = GameSimulation.launchSonar(run).first
         var events = listOf<GameEvent>()
         // Simulate until the ping reaches the hazard
         // Ping speed is 80 units/s, distance 50 units -> time = 50/80 = 0.625s

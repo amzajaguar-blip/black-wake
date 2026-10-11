@@ -208,7 +208,7 @@ data class GameState(
     val mode: GameMode = GameMode.MENU,
     val chapterIndex: Int = 0,
     val progress: Progress = Progress(),
-    val run: RunState = RunState(),
+    val run: RunState = RunState(modules = Progress().modules),
     val outcome: RunOutcome? = null,
     val pausePanel: PausePanel = PausePanel.NONE
 )

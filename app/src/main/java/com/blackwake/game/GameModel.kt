@@ -131,6 +131,7 @@ data class RunState(
     val runElapsed: Float = 0f,
     val spawnClock: Float = 0.42f,
     val tutorialStep: Int = 0,
+    val modules: Modules,
 
     val hull: Float = 100f,
     val maxHull: Float = 100f,

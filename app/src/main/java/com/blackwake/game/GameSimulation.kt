@@ -65,7 +65,8 @@ object GameSimulation {
             sonar = SonarState(),
             message = HudMessage(title, MessageTone.INFO, MESSAGE_SECONDS),
             radio = RadioLine(first.radio, RADIO_SECONDS),
-            feed = listOf(TerminalMessage(first.radio, MessageTone.INFO, 0f), TerminalMessage(title, MessageTone.INFO, 0f))
+            feed = listOf(TerminalMessage(first.radio, MessageTone.INFO, 0f), TerminalMessage(title, MessageTone.INFO, 0f)),
+            modules = progress.modules
         )
     }
 
@@ -88,7 +89,7 @@ object GameSimulation {
     fun launchSonar(run: RunState): Pair<RunState, List<GameEvent>> {
         val sonar = run.sonar
         if (!sonar.active && sonar.cooldown <= 0f) {
-            val modules = run.progress.modules
+            val modules = run.modules
             val cooldown = sonarCooldownSeconds(modules)
             val pingOriginX = run.playerX
             val pingOriginZ = 0f // player is at z=0
@@ -118,7 +119,7 @@ object GameSimulation {
                 distanceSq <= PING_RANGE * PING_RANGE
             }.map { pursuer ->
                 val pursuerZ = (PLAYER_Y - pursuer.y) / 0.85f
-                val lane = ((pursuer.x + 1f).roundToInt().coerceIn(0, 2))
+                val lane = ((pursuer.x + 1f).round().toInt().coerceIn(0, 2))
                 PursuerSnapshot(
                     id = pursuer.id,
                     type = pursuer.type,

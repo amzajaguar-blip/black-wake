@@ -139,6 +139,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun setThrottle(value: Float) = updateRun { GameSimulation.setThrottle(it, value) to emptyList() }
 
     fun launchFlare() = updateRun(GameSimulation::launchFlare)
+    fun launchSonar() = updateRun(GameSimulation::launchSonar)
 
     // --- Garage and settings
 

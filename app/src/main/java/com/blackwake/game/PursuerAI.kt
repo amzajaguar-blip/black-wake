@@ -112,7 +112,7 @@ object PursuerAI {
                     val moved = p.trackX(p.lockX, s.trackRate, dt).copy(y = approach(p.y, PASS_Y, s.chargeSpeed * dt), stateTimer = t)
                     when {
                         moved.y < PASS_Y -> moved
-                        lostTrack -> moved.enter(PursuerState.SEARCH).copy(lockX = ctx.playerX)
+                        lostTrack -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.SEARCH).copy(lockX = ctx.playerX)
                         else -> moved.enter(PursuerState.PURSUIT)
                     }
                 }

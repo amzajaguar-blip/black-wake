@@ -230,7 +230,6 @@ object GameSimulation {
                 // Clear contacts when ping ends
                 contactedEntities = emptyList()
                 contactedPursuers = emptyList()
-                contactTimer = 0f
             }
         }
         val sonar = SonarState(

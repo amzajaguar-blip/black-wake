@@ -90,7 +90,7 @@ object GameSimulation {
         val sonar = run.sonar
         if (!sonar.active && sonar.cooldown <= 0f) {
             val modules = run.modules
-            val cooldown = sonarCooldownSeconds(modules)
+            val sonarCooldown = sonarCooldownSeconds(modules)
             val pingOriginX = run.playerX
             val pingOriginZ = 0f // player is at z=0
             
@@ -130,7 +130,7 @@ object GameSimulation {
             }
             
             val nextSonar = SonarState(
-                cooldown = cooldown,
+                cooldown = sonarCooldown,
                 active = true,
                 radius = 0f,
                 contactedEntities = contactedEntities,
@@ -195,7 +195,7 @@ object GameSimulation {
 
         // --- Sonar
         val prevSonar = prev.sonar
-        var cooldown = max(0f, prevSonar.cooldown - dt)
+        var newCooldown = max(0f, prevSonar.cooldown - dt)
         var pingActive = prevSonar.active
         var pingRadius = prevSonar.radius
         var contactedEntities = prevSonar.contactedEntities
@@ -233,7 +233,7 @@ object GameSimulation {
             }
         }
         val sonar = SonarState(
-            cooldown = cooldown,
+            cooldown = newCooldown,
             active = pingActive,
             radius = pingRadius,
             contactedEntities = contactedEntities,

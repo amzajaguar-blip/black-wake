@@ -374,7 +374,7 @@ class GameSimulationTest {
 
     @Test
     fun sonarAttackingPursuerKeepsAttackState() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0.5f, attackTimer = 0.1f)
+        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0.5f, attackTimer = 0.0f)
         val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within the 2s investigation window)

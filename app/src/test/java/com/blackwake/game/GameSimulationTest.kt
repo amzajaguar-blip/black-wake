@@ -636,7 +636,6 @@ class GameSimulationTest {
 
     @Test
     fun flareAffectsOnlyPursuersWithinReach() {
-
     @Test
     fun flareGraceExpiresAfterTwoSeconds() {
         val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT)

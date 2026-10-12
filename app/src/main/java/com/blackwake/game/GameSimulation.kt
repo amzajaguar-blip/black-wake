@@ -75,15 +75,58 @@ object GameSimulation {
     fun launchFlare(run: RunState): Pair<RunState, List<GameEvent>> {
         val flare = run.flare
         if (flare.charges <= 0 || flare.timer > 0f || run.dive.submerged) return run to emptyList()
-        val dazzled = run.pursuers.count { it.state == PursuerState.PURSUIT || it.state == PursuerState.INTERCEPT || it.state == PursuerState.DETECTED }
-        val next = run.copy(
-            flare = FlareState(flare.charges - 1, FLARE_SECONDS),
-            pursuers = run.pursuers.map(PursuerAI::dazzle),
+        val launchLaneX = run.playerX
+        val pursuers = run.pursuers
+        var dazzledCount = 0
+        var committedRamCount = 0
+        val newPursuers = mutableListOf<Pursuer>()
+        for (p in pursuers) {
+            // Do not affect lost or already searching pursuers
+            if (p.state == PursuerState.LOST_TARGET || p.state == PursuerState.SEARCH || p.state == PursuerState.SEARCH_AGAIN) {
+                newPursuers.add(p)
+                continue
+            }
+            // Check reach: within 55 track units of player's row
+            if (Math.abs(p.y - PLAYER_Y) > 55f) {
+                newPursuers.add(p)
+                continue
+            }
+            // Now, pursuer is in reach and state is DETECTED, PURSUIT, or INTERCEPT
+            if (p.state == PursuerState.INTERCEPT && p.stateTimer >= PursuerAI.WIND_UP) {
+                // Committed ram: do not dazzle
+                newPursuers.add(p)
+                committedRamCount++
+            } else {
+                // Dazzle: set to SEARCH, reset timers, set lockX to launch lane, set flareGrace = 2f
+                val dazzled = PursuerAI.dazzle(p, launchLaneX, 2.0f)
+                newPursuers.add(dazzled)
+                dazzledCount++
+            }
+        }
+        // Apply flare effects: one charge, 5s light, +0.18 detection, 4s investigation marker
+        val newDetection = (run.detection + 0.18f).coerceIn(0f, 1f)
+        val newPeak = Math.max(run.peakDetection, newDetection)
+        val nextFlare = FlareState(
+            charges = flare.charges - 1,
+            timer = FLARE_SECONDS,
+            markerX = launchLaneX,
+            markerTimer = 4f
+        )
+        val nextRun = run.copy(
+            flare = nextFlare,
+            pursuers = newPursuers,
+            detection = newDetection,
+            peakDetection = newPeak,
             screenFlash = 0.5f,
             flashKind = FlashKind.FLARE
         )
-        val text = if (dazzled > 0) "RAZZO // INSEGUITORI ACCECATI" else "RAZZO // ACQUA ILLUMINATA"
-        return withMessages(next, listOf(text to MessageTone.WARNING)) to listOf(GameEvent.Noise(0.35f, 0.5f))
+        // Determine player-facing feedback
+        val messageText = when {
+            dazzledCount > 0 -> "RAZZO // LOCK ROTTO 2s"
+            committedRamCount > 0 -> "RAZZO // RAM GIÀ IMPEGNATO"
+            else -> "RAZZO // SOLO LUCE"
+        }
+        return withMessages(nextRun, listOf(messageText to MessageTone.WARNING)) to listOf(GameEvent.Noise(0.35f, 0.5f))
     }
 
     fun launchSonar(run: RunState): Pair<RunState, List<GameEvent>> {
@@ -298,7 +341,9 @@ object GameSimulation {
             silent || submerged,
             dt,
             prev.sonar.pingStartTime >= 0f && (prev.runElapsed - prev.sonar.pingStartTime) <= 2f,
-            prev.sonar.pingOriginX
+            prev.sonar.pingOriginX,
+            prev.flare.markerTimer > 0f,
+            prev.flare.markerX
         )
         val pursuers = ArrayList<Pursuer>(prev.pursuers.size + 1)
         for (p in prev.pursuers) {
@@ -332,7 +377,8 @@ object GameSimulation {
         if (detection >= 0.7f && pursuers.count { it.isActive } < PursuerAI.maxActive(chapterIndex) && pursuitCooldown <= 0f) {
             val type = PursuerAI.pickType(chapterIndex, detection, rng)
             val x = (prev.playerX + rng.nextFloat() - 0.5f).coerceIn(-1f, 1f)
-            pursuers += Pursuer(nextId++, type, x = x, y = PursuerAI.SPAWN_Y, lockX = x)
+            val lockX = if (prev.flare.markerTimer > 0f) prev.flare.markerX else prev.playerX
+            pursuers += Pursuer(nextId++, type, x = x, y = PursuerAI.SPAWN_Y, lockX = lockX)
             say("INSEGUITORE IN AVVICINAMENTO // ${enemyLabel(type)}", MessageTone.WARNING)
             events += GameEvent.Tone(400f, 0.5f, 0.35f)
             pursuitCooldown = 6f
@@ -595,7 +641,7 @@ object GameSimulation {
             speedFactor = speedFactor,
             dive = dive,
             sonar = sonar,
-            flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt)),
+            flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt), markerTimer = max(0f, prev.flare.markerTimer - dt)),
             comboCounter = combo,
             comboMultiplier = comboMultiplier,
             cameraShake = cameraShake,

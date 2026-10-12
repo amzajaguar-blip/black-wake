@@ -407,6 +407,13 @@ fun DrawScope.drawSea(
     if (flare > 0f) {
         drawRect(fx.flareWash(0.35f * quantize(flare), w / 2f, horizonY, w * 0.7f))
     }
+    // Flare investigation marker: amber circle at launch lane
+    if (run.flare.markerTimer > 0f) {
+        val markerRadius = 6f * u
+        val markerSx = screenX(run.flare.markerX, depth(0f))
+        val markerSy = screenY(0f)
+        drawCircle(Palette.Amber, markerRadius, Offset(markerSx, markerSy))
+    }
     if (submergeFog > 0f) {
         val veil = quantize(submergeFog)
         drawRect(Color(0xFF06283A).copy(alpha = 0.6f * veil))

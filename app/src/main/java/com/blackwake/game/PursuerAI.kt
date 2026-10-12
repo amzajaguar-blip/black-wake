@@ -42,7 +42,11 @@ object PursuerAI {
         /** Sonar investigation active: if true, pursuers in SEARCH state investigate the ping origin. */
         val sonarInvestigationActive: Boolean = false,
         /** Origin X of the ping for investigation. */
-        val sonarInvestigationOriginX: Float = 0f
+        val sonarInvestigationOriginX: Float = 0f,
+        /** Flare marker active: if true, pursuers in SEARCH state investigate the flare marker. */
+        val flareInvestigationActive: Boolean = false,
+        /** Origin X of the flare marker for investigation. */
+        val flareInvestigationOriginX: Float = 0f
     )
 
     fun spec(type: EnemyBoatType): Spec = when (type) {
@@ -73,10 +77,27 @@ object PursuerAI {
 
     fun isGone(p: Pursuer): Boolean = p.state == PursuerState.LOST_TARGET && p.y > GONE_Y
 
-    /** Flare glare: every pursuer still on the trail loses it. */
-    fun dazzle(p: Pursuer): Pursuer =
-        if (p.state == PursuerState.LOST_TARGET || p.state == PursuerState.SEARCH || p.state == PursuerState.SEARCH_AGAIN) p
-        else p.copy(state = PursuerState.SEARCH, stateTimer = 0f, attackTimer = 0f, lockX = p.x)
+    /** Flare effect: dazzle pursuers within reach, not in LOST_TARGET/SEARCH/SEARCH_AGAIN, and not in committed ram.
+ *  Sets state to SEARCH, resets timers, sets lockX to launch lane, and sets flareGrace = 2f.
+ *  Does not affect pursuers in committed ram (stateTimer >= WIND_UP in INTERCEPT). */
+    fun dazzle(p: Pursuer, launchLaneX: Float, flareGraceDuration: Float): Pursuer {
+        // Do not affect lost or already searching pursuers
+        if (p.state == PursuerState.LOST_TARGET || p.state == PursuerState.SEARCH || p.state == PursuerState.SEARCH_AGAIN) {
+            return p
+        }
+        // Do not affect pursuers in committed ram (stateTimer >= WIND_UP)
+        if (p.state == PursuerState.INTERCEPT && p.stateTimer >= PursuerAI.WIND_UP) {
+            return p
+        }
+        // Otherwise, dazzle: set to SEARCH, reset timers, set lockX to launch lane, and set flareGrace
+        return p.copy(
+            state = PursuerState.SEARCH,
+            stateTimer = 0f,
+            attackTimer = 0f,
+            lockX = launchLaneX,
+            flareGrace = flareGraceDuration
+        )
+    }
 
     fun step(p: Pursuer, ctx: Context, all: List<Pursuer>): Pursuer {
         val s = spec(p.type)
@@ -84,7 +105,9 @@ object PursuerAI {
         val t = p.stateTimer + dt
         val predictedX = (ctx.playerX + ctx.playerVelocityX * s.prediction).coerceIn(-1f, 1f)
         val lostTrack = ctx.hidden && ctx.detection < SHAKE_OFF_DETECTION
-        val reacquired = !ctx.hidden || ctx.detection > REACQUIRE_DETECTION
+        // Flare grace reduces over time; while >0, pursuer cannot reacquire
+        val newFlareGrace = (p.flareGrace - dt).coerceAtLeast(0f)
+        val reacquired = (!ctx.hidden || ctx.detection > REACQUIRE_DETECTION) && newFlareGrace <= 0f
 
         return when (p.state) {
             PursuerState.DETECTED -> {
@@ -125,11 +148,16 @@ object PursuerAI {
             }
 
             PursuerState.SEARCH, PursuerState.SEARCH_AGAIN -> {
-                val investigationLockX = if (ctx.sonarInvestigationActive) ctx.sonarInvestigationOriginX else p.lockX
+                val investigationLockX = if (ctx.flareInvestigationActive) ctx.flareInvestigationOriginX
+                                        else if (ctx.sonarInvestigationActive) ctx.sonarInvestigationOriginX
+                                        else p.lockX
                 val sweep = sin(t * 2f) * 0.5f
-                val moved = p.trackX((investigationLockX + sweep).coerceIn(-1f, 1f), 1.5f, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
+                val baseSearchRate = 1.5f
+                val hunterFlareBoost = if (ctx.flareInvestigationActive && p.type == EnemyBoatType.HUNTER) 1.5f else 1f
+                val rate = baseSearchRate * hunterFlareBoost
+                val moved = p.trackX((investigationLockX + sweep).coerceIn(-1f, 1f), rate, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
                 when {
-                    reacquired && !ctx.sonarInvestigationActive -> moved.enter(PursuerState.PURSUIT)
+                    reacquired && !ctx.flareInvestigationActive && !ctx.sonarInvestigationActive -> moved.enter(PursuerState.PURSUIT)
                     p.state == PursuerState.SEARCH && t > SEARCH_SECONDS -> moved.enter(PursuerState.SEARCH_AGAIN)
                     p.state == PursuerState.SEARCH_AGAIN && t > SEARCH_AGAIN_SECONDS -> moved.enter(PursuerState.LOST_TARGET)
                     else -> moved
@@ -137,7 +165,7 @@ object PursuerAI {
             }
 
             PursuerState.LOST_TARGET -> p.copy(y = p.y + 30f * dt, stateTimer = t)
-        }
+        }.copy(flareGrace = newFlareGrace)
     }
 
     private fun Pursuer.enter(next: PursuerState): Pursuer = copy(state = next, stateTimer = 0f)

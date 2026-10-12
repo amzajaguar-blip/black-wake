@@ -63,7 +63,9 @@ data class Pursuer(
     val attackTimer: Float = 0f,
     /** Lane locked for a ramming run, or the last known player position while searching. */
     val lockX: Float = 0f,
-    val roll: Float = 0f
+    val roll: Float = 0f,
+    /** Flare grace timer: when >0, pursuer cannot reacquire for 2 seconds after being dazzled. */
+    val flareGrace: Float = 0f
 ) {
     val isActive: Boolean get() = state != PursuerState.LOST_TARGET
 }
@@ -122,7 +124,9 @@ data class SonarState(
 
 data class FlareState(
     val charges: Int = 3,
-    val timer: Float = 0f
+    val timer: Float = 0f,
+    val markerX: Float = 0f,
+    val markerTimer: Float = 0f
 )
 
 /** Everything that belongs to a single mission. A new run always starts from a fresh instance. */

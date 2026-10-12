@@ -380,6 +380,8 @@ object GameSimulation {
             // If the flare investigation marker is active (markerTimer > 0f), spawned pursuers should target the marker.
             // Otherwise, they target the player's current lane.
             val lockX = if (prev.flare.markerTimer > 0f) prev.flare.markerX else prev.playerX
+            // DEBUG: print spawn info
+            println("Flare SPAWN: detection=$detection, markerTimer=${prev.flare.markerTimer}, markerX=${prev.flare.markerX}, lockX=$lockX, playerX=${prev.playerX}")
             pursuers += Pursuer(nextId++, type, x = x, y = PursuerAI.SPAWN_Y, lockX = lockX)
             say("INSEGUITORE IN AVVICINAMENTO // ${enemyLabel(type)}", MessageTone.WARNING)
             events += GameEvent.Tone(400f, 0.5f, 0.35f)

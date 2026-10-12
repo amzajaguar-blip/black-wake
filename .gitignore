@@ -43,3 +43,6 @@ node_modules/
 .manus-logs/
 .project-config.json
 .qwen/
+
+# Untracked file for the task
+LEVIATHAN_VERDICT_U2_SONAR.md

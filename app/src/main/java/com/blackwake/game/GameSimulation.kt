@@ -214,7 +214,7 @@ object GameSimulation {
             val oldRadius = pingRadius
             pingRadius += dt * PING_SPEED
             // Check for hazards that the ping front passes over (for haptic)
-            val newPulsedHazards = prev.entities.filter { it.type.isHazard }
+            val newPulsedHazards = prevSonar.contactedEntities.filter { it.type.isHazard }
                 .filter { hazard ->
                     val hazardZ = hazard.z
                     hazardZ > oldRadius && hazardZ <= pingRadius &&

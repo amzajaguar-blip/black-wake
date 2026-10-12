@@ -105,15 +105,16 @@ object PursuerAI {
             }
 
             PursuerState.INTERCEPT -> {
+                val attack = p.attackTimer + dt
                 if (t < WIND_UP) {
                     // Telegraph: slide onto the locked lane and hold, so the player can read the run.
-                    p.trackX(p.lockX, s.trackRate * 1.5f, dt).copy(stateTimer = t)
+                    p.trackX(p.lockX, s.trackRate * 1.5f, dt).copy(stateTimer = t, attackTimer = attack)
                 } else {
-                    val moved = p.trackX(p.lockX, s.trackRate, dt).copy(y = approach(p.y, PASS_Y, s.chargeSpeed * dt), stateTimer = t)
+                    val moved = p.trackX(p.lockX, s.trackRate, dt).copy(y = approach(p.y, PASS_Y, s.chargeSpeed * dt), stateTimer = t, attackTimer = attack)
                     when {
                         moved.y < PASS_Y -> moved
-                        lostTrack -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.SEARCH).copy(lockX = ctx.playerX)
-                        else -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.PURSUIT)
+                        lostTrack -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.SEARCH).copy(lockX = ctx.playerX, attackTimer = 0f)
+                        else -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.PURSUIT).copy(attackTimer = 0f)
                     }
                 }
             }

@@ -120,11 +120,11 @@ object GameSimulation {
             screenFlash = 0.5f,
             flashKind = FlashKind.FLARE
         )
-        // Determine player-facing feedback
+        // Determine player-facing feedback based on flare effects
         val messageText = when {
-            dazzledCount > 0 -> "RAZZO // LOCK ROTTO 2s"
-            committedRamCount > 0 -> "RAZZO // RAM GIÀ IMPEGNATO"
-            else -> "RAZZO // SOLO LUCE"
+            dazzledCount > 0 -> "RAZZO // LOCK ROTTO 2s" // At least one pursuer dazzled
+            committedRamCount > 0 -> "RAZZO // RAM GIÀ IMPEGNATO" // At least one committed ram
+            else -> "RAZZO // SOLO LUCE" // No pursuers affected
         }
         return withMessages(nextRun, listOf(messageText to MessageTone.WARNING)) to listOf(GameEvent.Noise(0.35f, 0.5f))
     }
@@ -377,6 +377,8 @@ object GameSimulation {
         if (detection >= 0.7f && pursuers.count { it.isActive } < PursuerAI.maxActive(chapterIndex) && pursuitCooldown <= 0f) {
             val type = PursuerAI.pickType(chapterIndex, detection, rng)
             val x = (prev.playerX + rng.nextFloat() - 0.5f).coerceIn(-1f, 1f)
+            // If the flare investigation marker is active (markerTimer > 0f), spawned pursuers should target the marker.
+            // Otherwise, they target the player's current lane.
             val lockX = if (prev.flare.markerTimer > 0f) prev.flare.markerX else prev.playerX
             pursuers += Pursuer(nextId++, type, x = x, y = PursuerAI.SPAWN_Y, lockX = lockX)
             say("INSEGUITORE IN AVVICINAMENTO // ${enemyLabel(type)}", MessageTone.WARNING)

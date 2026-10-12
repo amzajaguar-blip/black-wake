@@ -374,7 +374,7 @@ class GameSimulationTest {
 
     @Test
     fun sonarAttackingPursuerKeepsAttackState() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0.5f, attackTimer = 0.0f)
+        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0f, attackTimer = 0.0f)
         val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within the 2s investigation window)
@@ -406,7 +406,7 @@ class GameSimulationTest {
         // Immediate reactivation attempt during active ping -> no-op
         val (secondRun, secondEvents) = GameSimulation.launchSonar(firstRun)
         assertTrue(secondRun.sonar.active) // still active from first ping
-        assertEquals(firstEvents.size, secondEvents.size)
+        assertEquals(0, secondEvents.size)
         // Wait for ping propagation to end (1.4s > 110/80=1.375)
         val stepped = simulate(secondRun, 1.4f)
         // Now sonar.active should be false, but cooldown > 0
@@ -415,7 +415,7 @@ class GameSimulationTest {
         // Reactivation attempt during cooldown -> no-op
         val (thirdRun, thirdEvents) = GameSimulation.launchSonar(stepped)
         assertFalse(thirdRun.sonar.active) // should still be inactive
-        assertEquals(secondEvents.size, thirdEvents.size) // no new events
+        assertEquals(0, thirdEvents.size) // no new events
     }
 
     @Test

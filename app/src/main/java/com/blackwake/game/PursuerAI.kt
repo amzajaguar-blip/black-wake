@@ -113,7 +113,7 @@ object PursuerAI {
                     when {
                         moved.y < PASS_Y -> moved
                         lostTrack -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.SEARCH).copy(lockX = ctx.playerX)
-                        else -> moved.enter(PursuerState.PURSUIT)
+                        else -> if (ctx.sonarInvestigationActive) moved else moved.enter(PursuerState.PURSUIT)
                     }
                 }
             }

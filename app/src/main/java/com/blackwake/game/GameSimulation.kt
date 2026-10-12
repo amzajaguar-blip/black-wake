@@ -295,7 +295,7 @@ object GameSimulation {
             detection,
             silent || submerged,
             dt,
-            prev.sonar.active && (prev.runElapsed - prev.sonar.pingStartTime) <= 2f,
+            prev.sonar.pingStartTime > 0f && (prev.runElapsed - prev.sonar.pingStartTime) <= 2f,
             prev.sonar.pingOriginX
         )
         val pursuers = ArrayList<Pursuer>(prev.pursuers.size + 1)

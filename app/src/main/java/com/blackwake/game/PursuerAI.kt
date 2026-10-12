@@ -123,7 +123,7 @@ object PursuerAI {
                 val sweep = sin(t * 2f) * 0.5f
                 val moved = p.trackX((investigationLockX + sweep).coerceIn(-1f, 1f), 1.5f, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
                 when {
-                    reacquired -> moved.enter(PursuerState.PURSUIT)
+                    reacquired && !ctx.sonarInvestigationActive -> moved.enter(PursuerState.PURSUIT)
                     p.state == PursuerState.SEARCH && t > SEARCH_SECONDS -> moved.enter(PursuerState.SEARCH_AGAIN)
                     p.state == PursuerState.SEARCH_AGAIN && t > SEARCH_AGAIN_SECONDS -> moved.enter(PursuerState.LOST_TARGET)
                     else -> moved

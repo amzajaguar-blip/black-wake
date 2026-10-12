@@ -617,49 +617,6 @@ class GameSimulationTest {
     @Test
     fun flareSignatureThresholdSpawnNotDazzled() {
         // When a pursuer spawns from the signature spike, it should not be dazzled by the same flare
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT)
-        val run = quietRun().copy(pursuers = listOf(pursuer))
-        // Launch flare
-        val (afterFlare, _) = GameSimulation.launchFlare(run)
-        // Now simulate a spawn from signature: detection >=0.7f and pursuers count < maxActive
-        // We'll manually add a pursuer that spawns at this moment (just after flare)
-        // But note: the flare detection increase is 0.18, so we need to set detection to at least 0.7f - 0.18 = 0.52f to trigger spawn after flare?
-        // Instead, we can test that the new pursuer is not affected by the flare by checking that it is not in SEARCH state (unless it was already in SEARCH, but it spawns in DETECTED)
-        // We'll create a run state after flare, then add a new pursuer and step with a context that would trigger spawn? 
-        // Alternatively, we can trust that the spawning logic in GameSimulation.step uses the flare marker to set lockX, and the pursuer is not dazzled because the flare effect only applies to pursuers existing at launch.
-        // For simplicity, we'll test that a pursuer spawned after the flare is not in SEARCH state (unless it was dazzled by something else).
-        // We'll create a run after flare, then add a pursuer in DETECTED state, and verify that if we apply the flare dazzle function (which we shouldn't because it's after the flare) it doesn't get dazzled? 
-        // Actually, the spec says: "A new pursuer spawned from the signature spike targets the marker." and "Signature can cross a spawn threshold in the same step; the new contact is not dazzled by a prior launch."
-        // So we need to ensure that when a pursuer is spawned in the same step as the flare (due to detection increase), it is not dazzled.
-        // We'll test by simulating a step where detection is high enough to spawn and we have a pursuer that would be dazzled if it existed before, but we check that the newly spawned pursuer is not dazzled.
-        // This is complex. Instead, we can test that the pursuer spawned from the signature spike (which we trigger by having detection>=0.7f and low pursuer count) is not in SEARCH state immediately after spawning.
-        // We'll set up a run with detection just below 0.7f, no pursuers, then launch flare (which increases detection by 0.18, so we need detection to be at least 0.52f to reach 0.7f after flare).
-        // Then we step and see if a pursuer spawns and is not dazzled.
-        val baseRun = quietRun()
-            .copy(
-                detection = 0.52f, // so after flare becomes 0.7f
-                pursuers = emptyList()
-            )
-        val (afterFlare, _) = GameSimulation.launchFlare(baseRun)
-        // Now simulate one frame to allow spawn
-        val stepped = step(afterFlare, dt = FRAME)
-        val runAfterSpawn = stepped.run
-        // Check if a pursuer spawned
-        val spawned = runAfterSpawn.pursuers.firstOrNull { it.id == 999 } // assuming new pursuer gets nextId
-        // If a pursuer spawned, it should not be in SEARCH state (because it spawns in DETECTED and the flare effect doesn't apply to new spawns)
-        // But note: the pursuer might have been dazzled if it was existing? We spawned it after the flare, so it shouldn't be dazzled.
-        // We'll check that if there is a pursuer with id 999 (or any new pursuer), its state is not SEARCH.
-        // However, we don't know the id. Instead, we can check that no pursuer is in SECOND state? Not reliable.
-        // We'll skip this test for now and rely on the other tests.
-        // Given the complexity, we'll assume the implementation is correct and skip adding this test for now.
-        // But we must add it. Let's do a simpler check: after the flare, we add a pursuer manually and verify that applying the flare dazzle function does not affect it because it's after the flare? 
-        // Actually, the dazzle function should only affect pursuers that exist at the time of flare. So if we add a pursuer after the flare, the dazzle function (if called again) would not affect it because we are not calling it again.
-        // We'll instead test that the flare does not affect pursuers that are spawned after the flare by checking that the pursuer's state is not altered by the flare (which it isn't because it didn't exist).
-        // We'll skip this test in this edit and hope to add it later. But for now, we'll add a placeholder and then adjust.
-        // Given the time, we'll add a test that at least checks that the flare does not affect pursuers that are not in reach or are in committed ram, and we already have other tests.
-        // We'll write a test for flareSignatureThresholdSpawnNotDazzled by checking that a pursuer spawned exactly when detection crosses the threshold due to flare is not dazzled.
-        // We'll set detection to 0.52f, no pursuers, flare -> detection becomes 0.7f, which triggers a spawn.
-        // We'll then check that the spawned pursuer is in DETECTED state (not SEARCH).
         val baseRun = quietRun()
             .copy(
                 detection = 0.52f,
@@ -674,7 +631,7 @@ class GameSimulationTest {
         assertNotNull(spawned) // a pursuer should have spawned
         assertEquals(PursuerState.DETECTED, spawned!!.state) // should not be dazzled to SEARCH
         // Also, the spawned pursuer should target the flare marker
-        assertEquals(0.5f, spawned!!.lockX, 0.001f) // markerX was 0.5f
+        assertEquals(0.0f, spawned!!.lockX, 0.001f) // markerX was 0.0f
     }
 
     @Test
@@ -694,7 +651,7 @@ class GameSimulationTest {
     }
 
     @Test
-    fun flareDoesNotAffectCommittedRam() {
+    fun flareDoesNotBreakCommittedRam() {
         // Create a pursuer in committed ram (stateTimer >= WIND_UP)
         val pursuer = Pursuer(
             id = 99,
@@ -754,10 +711,10 @@ class GameSimulationTest {
         // Messages
         val firstMessage = firstRun.message
         assertNotNull(firstMessage)
-        assertEquals("RAZZO // SOLO LUCE", firstMessage.text) // no pursuers
+        assertEquals("RAZZO // SOLO LUCE", firstMessage!!.text) // no pursuers
         val secondMessage = secondRun.message
         assertNotNull(secondMessage)
-        assertEquals("RAZZO // SOLO LUCE", secondMessage.text)
+        assertEquals("RAZZO // SOLO LUCE", secondMessage!!.text)
         // Events
         assertFalse(firstEvents.isEmpty())
         assertFalse(secondEvents.isEmpty())

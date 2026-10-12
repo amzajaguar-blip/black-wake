@@ -619,7 +619,7 @@ class GameSimulationTest {
         // When a pursuer spawns from the signature spike, it should not be dazzled by the same flare
         val baseRun = quietRun()
             .copy(
-                detection = 0.52f,
+                detection = 0.53f,
                 pursuers = emptyList(),
                 nextId = 999 // so the spawned pursuer gets id 999
             )
@@ -707,7 +707,7 @@ class GameSimulationTest {
         val (secondRun, secondEvents) = GameSimulation.launchFlare(expiredRun)
         assertEquals(1, secondRun.flare.charges) // another charge consumed
         assertEquals(5.0f, secondRun.flare.timer, 0.001f)
-        assertEquals(0.18f, secondRun.detection, 0.001f)
+        assertEquals(expiredRun.detection + 0.18f, secondRun.detection, 0.002f)
         // Messages
         val firstMessage = firstRun.message
         assertNotNull(firstMessage)

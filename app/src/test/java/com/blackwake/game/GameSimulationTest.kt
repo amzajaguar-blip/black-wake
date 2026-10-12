@@ -588,8 +588,8 @@ class GameSimulationTest {
         // Message should be SOLO LUCE
         val message = newRun.message
         assertNotNull(message)
-        assertEquals("RAZZO // SOLO LUCE", message.text)
-        assertEquals(MessageTone.WARNING, message.tone)
+        assertEquals("RAZZO // SOLO LUCE", message!!.text)
+        assertEquals(MessageTone.WARNING, message!!.tone)
     }
 
     @Test
@@ -672,9 +672,9 @@ class GameSimulationTest {
         // Find the pursuer with id 999 (the one that should have spawned)
         val spawned = runAfterSpawn.pursuers.firstOrNull { it.id == 999 }
         assertNotNull(spawned) // a pursuer should have spawned
-        assertEquals(PursuerState.DETECTED, spawned.state) // should not be dazzled to SEARCH
+        assertEquals(PursuerState.DETECTED, spawned!!.state) // should not be dazzled to SEARCH
         // Also, the spawned pursuer should target the flare marker
-        assertEquals(0.5f, spawned.lockX, 0.001f) // markerX was 0.5f
+        assertEquals(0.5f, spawned!!.lockX, 0.001f) // markerX was 0.5f
     }
 
     @Test
@@ -726,8 +726,8 @@ class GameSimulationTest {
         // Feedback message should indicate committed ram
         val message = afterFlare.message
         assertNotNull(message)
-        assertEquals("RAZZO // RAM GIÀ IMPEGNATO", message.text)
-        assertEquals(MessageTone.WARNING, message.tone)
+        assertEquals("RAZZO // RAM GIÀ IMPEGNATO", message!!.text)
+        assertEquals(MessageTone.WARNING, message!!.tone)
         // Events should contain the noise
         assertFalse(events.isEmpty())
         assertTrue(events.any { it is GameEvent.Noise })

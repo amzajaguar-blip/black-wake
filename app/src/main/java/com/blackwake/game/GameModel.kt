@@ -115,7 +115,7 @@ data class SonarState(
     /** X position of the ping origin (player's x at activation). */
     val pingOriginX: Float = 0f,
     /** Time when ping was activated (for investigation timing). */
-    val pingStartTime: Float = 0f
+    val pingStartTime: Float = -1f
 )
 
 data class FlareState(

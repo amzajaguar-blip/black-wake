@@ -109,7 +109,7 @@ data class SonarState(
     /** Snapshot of pursuers within range at ping activation. */
     val contactedPursuers: List<PursuerSnapshot> = emptyList(),
     /** Timer for contact expiration (3 seconds). */
-    val contactTimer: Float = 0f,
+    val contactTimer: Float = 3f,
     /** Set of hazard IDs that have already pulsed for haptic feedback. */
     val pulsedHazardIds: Set<Int> = emptySet(),
     /** X position of the ping origin (player's x at activation). */

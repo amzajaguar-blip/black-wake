@@ -138,7 +138,8 @@ object GameSimulation {
                 contactTimer = 3f,
                 pulsedHazardIds = emptySet(),
                 pingOriginX = run.playerX,
-                pingStartTime = run.runElapsed
+                pingStartTime = run.runElapsed,
+                initialCooldown = sonarCooldown
             )
             
             val nextRun = run.copy(sonar = nextSonar)
@@ -241,7 +242,8 @@ object GameSimulation {
             contactTimer = contactTimer,
             pulsedHazardIds = pulsedHazardIds,
             pingOriginX = prev.sonar.pingOriginX,
-            pingStartTime = prev.sonar.pingStartTime
+            pingStartTime = prev.sonar.pingStartTime,
+            initialCooldown = prev.sonar.initialCooldown
         )
 
         // --- Detection

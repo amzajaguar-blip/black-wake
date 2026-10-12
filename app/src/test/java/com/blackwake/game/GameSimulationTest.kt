@@ -405,7 +405,7 @@ class GameSimulationTest {
         assertTrue(firstRun.sonar.active)
         // Immediate reactivation attempt during active ping -> no-op
         val (secondRun, secondEvents) = GameSimulation.launchSonar(firstRun)
-        assertFalse(secondRun.sonar.active) // still active from first ping
+        assertTrue(secondRun.sonar.active) // still active from first ping
         assertEquals(firstEvents.size, secondEvents.size)
         // Wait for ping propagation to end (1.4s > 110/80=1.375)
         val stepped = simulate(secondRun, 1.4f)

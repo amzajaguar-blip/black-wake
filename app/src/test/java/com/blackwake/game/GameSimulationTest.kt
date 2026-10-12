@@ -479,7 +479,7 @@ class GameSimulationTest {
         assertEquals(4f, after2s.run.sonar.cooldown, 0.001f)
         // Step until cooldown reaches 0
         // We can step 4 more seconds to go from 4 to 0
-        val after6s = simulate(after2s.run, 4.0f)
+        val after6s = step(after2s.run, dt = 4.0f).run
         assertEquals(0f, after6s.sonar.cooldown, 0.001f)
         // Now we should be able to activate again
         val (secondRun, _) = GameSimulation.launchSonar(after6s)

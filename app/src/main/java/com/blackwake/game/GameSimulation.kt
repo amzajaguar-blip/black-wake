@@ -227,16 +227,17 @@ object GameSimulation {
         var burstStartedThisFrame = false
         var burstEndedThisFrame = false
 
-        // Detect upward crossing into burst zone (throttle > 0.8) to arm burst
-        val wantsBurst = throttle > 0.8f && !currentlySubmerged && burst.heatLock <= 0f && hasFuel && prev.fuel >= 12f
-        val justEnteredBurstZone = throttle > 0.8f && prev.throttle <= 0.8f
+        // Re-arm: whenever the lever is low, the latch arms
+        if (throttle <= 0.8f) {
+            newBurst = newBurst.copy(armed = true)
+        }
 
-        // Start burst if conditions met and we just entered the zone (or armed and conditions met?)
-        if (justEnteredBurstZone && wantsBurst && !burst.active) {
+        // Fire (single burst): when armed, lever high, not submerged, heat lock ready, enough fuel, and not already active
+        if (newBurst.armed && throttle > 0.8f && !currentlySubmerged && newBurst.heatLock <= 0f && prev.fuel >= 12f && !newBurst.active) {
             newBurst = newBurst.copy(
                 active = true,
                 timer = 0f,
-                armed = true
+                armed = false
             )
             burstStartedThisFrame = true
             events += GameEvent.Vibrate(listOf(0, 30))

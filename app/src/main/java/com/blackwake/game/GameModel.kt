@@ -134,7 +134,7 @@ data class BurstState(
     val timer: Float = 0f,
     val heatLock: Float = 0f,
     val diveLock: Float = 0f,
-    val armed: Boolean = false
+    val armed: Boolean = true
 )
 
 /** Everything that belongs to a single mission. A new run always starts from a fresh instance. */

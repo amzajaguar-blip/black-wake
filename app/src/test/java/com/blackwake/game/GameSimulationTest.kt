@@ -919,7 +919,7 @@ class GameSimulationTest {
         // Simulate a burst and its heat lock to ensure we are in a clean state.
         // We'll do a burst with throttle 0.9 for 2.5s, then wait for heat lock (7s) with throttle 0.
         val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
-        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f, RunInput(throttle = 0.0f))
+        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.0f), 7.0f, RunInput())
         // Now we are past burst and heat lock.
         // Set throttle to 1.0 and simulate 2 seconds.
         val run = simulate(afterHeatLock.copy(throttle = 1.0f), 2.0f, RunInput())

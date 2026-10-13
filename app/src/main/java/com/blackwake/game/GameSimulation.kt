@@ -227,8 +227,8 @@ object GameSimulation {
         var burstStartedThisFrame = false
         var burstEndedThisFrame = false
 
-        // Re-arm: whenever the lever is low and heat lock is expired, the latch arms
-        if (throttle <= 0.8f && newBurst.heatLock <= 0f) {
+        // Re-arm: whenever the lever is low, the latch arms
+        if (throttle <= 0.8f) {
             newBurst = newBurst.copy(armed = true)
         }
 

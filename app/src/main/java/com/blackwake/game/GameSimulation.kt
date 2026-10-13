@@ -378,12 +378,13 @@ object GameSimulation {
         var detection = (prev.detection + dt * (accumulation - decay)).coerceIn(0f, 1f)
         // Burst detection
         if (newBurst.active) {
-            // Ignition cost: +0.08 once at ignition
             if (burstStartedThisFrame) {
+                // Ignition cost: +0.08 once at ignition, no active cost in same frame
                 detection = (detection + 0.08f).coerceIn(0f, 1f)
+            } else {
+                // Active cost: +0.12/s (only after ignition frame)
+                detection = (detection + 0.12f * dt).coerceIn(0f, 1f)
             }
-            // Active cost: +0.12/s
-            detection = (detection + 0.12f * dt).coerceIn(0f, 1f)
         }
 
         // --- Fuel

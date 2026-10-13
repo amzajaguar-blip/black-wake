@@ -76,8 +76,8 @@ class SoakTest {
                     abs(it.x - run.playerX) < GameSimulation.RAM_HIT + 0.2f
             }
             val flare = run.pursuers.any { it.state == PursuerState.INTERCEPT }
-            return Decision(best - 1f, diveAvailable && (closeDiveHazard || imminentRam),
-                flare, nearBlocked.all { it }, feasible)
+            val canDive = diveAvailable && (closeDiveHazard || imminentRam) && run.burst.diveLock <= 0f
+            return Decision(best - 1f, canDive, flare, nearBlocked.all { it }, feasible)
         }
     }
 

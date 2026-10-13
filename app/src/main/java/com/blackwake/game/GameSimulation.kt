@@ -308,7 +308,7 @@ object GameSimulation {
         val heatClampedThrottle = if (newBurst.heatLock > 0f) min(throttle, 0.5f) else throttle
         val heatClampedSpeed = (0.8f + heatClampedThrottle * 0.4f) * boat.speed
         val targetSpeed = if (newBurst.active) 1.70f * boat.speed else heatClampedSpeed
-        val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
+        val speedFactor = if (burstStartedThisFrame) targetSpeed else prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
         val prevSonar = prev.sonar

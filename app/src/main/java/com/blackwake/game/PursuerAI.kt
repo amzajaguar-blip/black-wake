@@ -157,7 +157,7 @@ object PursuerAI {
                 val rate = baseSearchRate * hunterFlareBoost
                 val moved = p.trackX((investigationLockX + sweep).coerceIn(-1f, 1f), rate, dt).copy(y = approach(p.y, 110f, 8f * dt), stateTimer = t)
                 when {
-                    reacquired && !ctx.flareInvestigationActive && !ctx.sonarInvestigationActive -> moved.enter(PursuerState.PURSUIT)
+                    reacquired && !ctx.sonarInvestigationActive -> moved.enter(PursuerState.PURSUIT)
                     p.state == PursuerState.SEARCH && t > SEARCH_SECONDS -> moved.enter(PursuerState.SEARCH_AGAIN)
                     p.state == PursuerState.SEARCH_AGAIN && t > SEARCH_AGAIN_SECONDS -> moved.enter(PursuerState.LOST_TARGET)
                     else -> moved

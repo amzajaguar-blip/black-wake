@@ -129,6 +129,14 @@ data class FlareState(
     val markerTimer: Float = 0f
 )
 
+data class BurstState(
+    val active: Boolean = false,
+    val timer: Float = 0f,
+    val heatLock: Float = 0f,
+    val diveLock: Float = 0f,
+    val armed: Boolean = false
+)
+
 /** Everything that belongs to a single mission. A new run always starts from a fresh instance. */
 data class RunState(
     val sectorIndex: Int = 0,
@@ -159,6 +167,7 @@ data class RunState(
     val dive: DiveState = DiveState(),
     val sonar: SonarState = SonarState(),
     val flare: FlareState = FlareState(),
+    val burst: BurstState = BurstState(),
 
     val comboCounter: Int = 0,
     val comboMultiplier: Int = 1,

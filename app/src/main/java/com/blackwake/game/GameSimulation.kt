@@ -214,11 +214,85 @@ object GameSimulation {
         var flashKind = if (screenFlash > 0f) prev.flashKind else FlashKind.NONE
         fun flash(kind: FlashKind, amount: Float) { screenFlash = max(screenFlash, amount); flashKind = kind }
 
-        // --- Engine
+        // --- Burst State Update ---
+        val burst = prev.burst
         val hasFuel = prev.fuel > 0f
         val throttle = if (hasFuel) prev.throttle else 0f
         val boosting = throttle > 0.8f
         val silent = throttle < 0.2f
+        val submerged = prev.dive.submerged
+
+        var newBurst = burst
+        var burstStartedThisFrame = false
+        var burstEndedThisFrame = false
+
+        // Detect upward crossing into burst zone (throttle > 0.8) to arm burst
+        val wantsBurst = throttle > 0.8f && !submerged && burst.heatLock <= 0f && hasFuel && prev.fuel >= 12f
+        val justEnteredBurstZone = throttle > 0.8f && prev.throttle <= 0.8f
+
+        // Start burst if conditions met and we just entered the zone (or armed and conditions met?)
+        if (justEnteredBurstZone && wantsBurst && !burst.active) {
+            newBurst = newBurst.copy(
+                active = true,
+                timer = 0f,
+                armed = true
+            )
+            burstStartedThisFrame = true
+            events += GameEvent.Vibrate(listOf(0, 30))
+            events += GameEvent.Tone(200f, 0.2f, 0.5f)
+        }
+
+        // Update burst timer if active
+        if (newBurst.active) {
+            val updatedTimer = newBurst.timer + dt
+            if (updatedTimer >= 2.5f) {
+                // Burst ended by time
+                newBurst = newBurst.copy(
+                    active = false,
+                    timer = 0f,
+                    heatLock = 7f,
+                    diveLock = 2f,
+                    armed = false
+                )
+                burstEndedThisFrame = true
+                events += GameEvent.Vibrate(listOf(0, 30, 0, 30))
+                events += GameEvent.Tone(100f, 0.2f, 0.5f)
+            } else {
+                newBurst = newBurst.copy(timer = updatedTimer)
+            }
+        }
+
+        // Update heat lock timer
+        if (newBurst.heatLock > 0f) {
+            newBurst = newBurst.copy(heatLock = max(0f, newBurst.heatLock - dt))
+        }
+        // Update dive lock timer
+        if (newBurst.diveLock > 0f) {
+            newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
+        }
+
+        // If burst ended due to fuel exhaustion or lever release, we need to set heat/dive lock
+        // We'll handle that below when checking burst end conditions.
+
+        // Check for burst end due to lever release or fuel exhaustion
+        if (newBurst.active) {
+            val shouldEnd = throttle <= 0.8f || prev.fuel < 12f || !hasFuel
+            if (shouldEnd) {
+                newBurst = newBurst.copy(
+                    active = false,
+                    timer = 0f,
+                    heatLock = 7f,
+                    diveLock = 2f,
+                    armed = false
+                )
+                burstEndedThisFrame = true
+                events += GameEvent.Vibrate(listOf(0, 30, 0, 30))
+                events += GameEvent.Tone(100f, 0.2f, 0.5f)
+            }
+        }
+        // --- Speed: throttle, vessel
+        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed
+        val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Dive
         val prevDive = prev.dive
@@ -303,10 +377,24 @@ object GameSimulation {
             else -> 0.02f
         }
         var detection = (prev.detection + dt * (accumulation - decay)).coerceIn(0f, 1f)
+        // Burst detection
+        if (newBurst.active) {
+            // Ignition cost: +0.08 once at ignition
+            if (burstStartedThisFrame) {
+                detection = (detection + 0.08f).coerceIn(0f, 1f)
+            }
+            // Active cost: +0.12/s
+            detection = (detection + 0.12f * dt).coerceIn(0f, 1f)
+        }
 
         // --- Fuel
-        val boostUse = throttle * throttle * 6.1f * (1f - 0.12f * modules.engine)
-        var fuel = max(0f, prev.fuel - dt * (0.5f + boostUse) * boat.fuelUse)
+        var fuel: Float
+        if (newBurst.active) {
+            fuel = max(0f, prev.fuel - dt * 4.5f * boat.fuelUse)
+        } else {
+            val boostUse = throttle * throttle * 6.1f * (1f - 0.12f * modules.engine)
+            fuel = max(0f, prev.fuel - dt * (0.5f + boostUse) * boat.fuelUse)
+        }
 
         // --- Continuous hull stress
         var hull = prev.hull
@@ -371,6 +459,10 @@ object GameSimulation {
                 }
                 // Bounce back into pursuit instead of ramming through again.
                 next = next.copy(state = PursuerState.PURSUIT, stateTimer = 0f, attackTimer = 0f)
+            }
+            if (newBurst.active) {
+                val extraY = 18f * dt
+                next = next.copy(y = min(next.y + extraY, 110f))
             }
             pursuers += next
         }

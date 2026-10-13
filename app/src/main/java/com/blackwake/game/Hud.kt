@@ -212,6 +212,8 @@ private fun ThrottleLever(run: RunState, onChange: (Float) -> Unit) {
     }
     val mode = when {
         run.fuel <= 0f -> "DERIVA"
+        run.burst.active -> "SPINTA 2.5s"
+        run.burst.heatLock > 0f -> "CALDO ${(run.burst.heatLock).toInt()}s"
         throttle > 0.8f -> "SPINTA"
         throttle < 0.2f -> "SILENZIO"
         else -> "CROCIERA"
@@ -324,44 +326,58 @@ private fun ActionButton(
 
 @Composable
 private fun DiveButton(run: RunState, viewModel: GameViewModel) {
-    val dive = run.dive
-    val canDive = dive.submerged || (dive.oxygen >= 15f && !dive.lockedOut)
-    val tint = when {
-        dive.submerged -> Palette.Cyan
-        canDive -> Palette.Cyan.copy(alpha = 0.85f)
-        else -> Palette.Dim
-    }
-    Box(
-        Modifier
-            .size(60.dp)
-            .background(if (dive.submerged) Palette.Cyan.copy(alpha = 0.35f) else Palette.Panel, CircleShape)
-            .border(2.dp, tint, CircleShape)
-            .semantics { contentDescription = "Immergi, tieni premuto" }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    down.consume()
-                    viewModel.setDive(true)
-                    try {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            change.consume()
-                            if (!change.pressed) break
+    val diveLockActive = run.burst.diveLock > 0f
+    if (diveLockActive) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .background(Palette.Panel, CircleShape)
+                .border(2.dp, Palette.Dim, CircleShape)
+                .semantics { contentDescription = "Immergi bloccato" }
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Label("BLOCCO ${(run.burst.diveLock).toInt()}s", Palette.Text, 9.sp)
+            }
+        }
+    } else {
+        val dive = run.dive
+        val canDive = dive.submerged || (dive.oxygen >= 15f && !dive.lockedOut)
+        val tint = when {
+            dive.submerged -> Palette.Cyan
+            canDive -> Palette.Cyan.copy(alpha = 0.85f)
+            else -> Palette.Dim
+        }
+        Box(
+            Modifier
+                .size(60.dp)
+                .background(if (dive.submerged) Palette.Cyan.copy(alpha = 0.35f) else Palette.Panel, CircleShape)
+                .border(2.dp, tint, CircleShape)
+                .semantics { contentDescription = "Immergi, tieni premuto" }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        down.consume()
+                        viewModel.setDive(true)
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                change.consume()
+                                if (!change.pressed) break
+                            }
+                        } finally {
+                            viewModel.setDive(false)
                         }
-                    } finally {
-                        viewModel.setDive(false)
                     }
                 }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.fillMaxSize().padding(4.dp)) {
-            drawArc(tint.copy(alpha = 0.6f), -90f, 360f * (dive.oxygen / 100f), useCenter = false, style = Stroke(3f * density))
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Label("IMMERGI", tint, 8.sp)
-            Label(if (dive.submerged) "${dive.oxygen.toInt()}%" else "TIENI", Palette.Text.copy(alpha = if (canDive) 1f else 0.4f), 9.sp)
+        ) {
+            Canvas(Modifier.fillMaxSize().padding(4.dp)) {
+                drawArc(tint.copy(alpha = 0.6f), -90f, 360f * (dive.oxygen / 100f), useCenter = false, style = Stroke(3f * density))
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Label("IMMERGI", tint, 8.sp)
+                Label(if (dive.submerged) "${dive.oxygen.toInt()}%" else "TIENI", Palette.Text.copy(alpha = if (canDive) 1f else 0.4f), 9.sp)
+            }
         }
     }
 }

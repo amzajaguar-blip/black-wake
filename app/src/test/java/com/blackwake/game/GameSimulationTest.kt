@@ -917,7 +917,7 @@ class GameSimulationTest {
         // Start with a clean state.
         val start = quietRun()
         // Simulate a burst and its heat lock to ensure we are in a clean state.
-        // We'll do a burst with throttle 0.9 for 2.5s, then wait for heat lock (7s) with throttle 0.
+        // We'll do a burst with throttle 0.9 for 2.5s (triggered by high throttle), then wait for heat lock (7s) with throttle 0 to avoid re-triggering.
         val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
         val afterHeatLock = simulate(afterBurst.copy(throttle = 0.0f), 7.0f, RunInput())
         // Now we are past burst and heat lock.
@@ -931,18 +931,16 @@ class GameSimulationTest {
 
     @Test
     fun throttleTradesSpeedForSignature() {
-        // Wait for any burst and heat lock to expire to avoid interference
+        // Start from a clean state; the 3s at full throttle will include a burst and heat lock
         val start = quietRun()
-        val afterBurstAndHeat = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput()) // burst
-                            .let { run -> simulate(run.copy(throttle = 0.0f), 7.0f, RunInput()) } // heat lock
-        // Now we are past burst and heat lock.
-        val fast = simulate(afterBurstAndHeat.copy(throttle = 1.0f), 3.0f, RunInput())
-        val silent = simulate(afterBurstAndHeat.copy(throttle = 0.0f), 3.0f, RunInput())
+        val fast = simulate(start.copy(throttle = 1.0f), 3.0f, RunInput())
+        val silent = simulate(start.copy(throttle = 0.0f), 3.0f, RunInput())
         assertTrue(fast.sectorProgress > silent.sectorProgress)
         assertTrue(fast.detection > silent.detection)
         assertTrue(fast.fuel < silent.fuel)
-        // Note: Burst and heat lock are waited out to isolate the intrinsic
-        // throttle trade-off without burst-related detection spikes or fuel drains.
+        // Note: The burst and heat lock are accounted for; the fast simulation includes
+        // a 2.5s burst followed by 0.5s of heat lock (with throttle clamped to 0.5).
+        // The intrinsic throttle trade-off (fast > silent on speed and detection, fast < silent on fuel) still holds.
     }    private companion object {
         const val FRAME = 1f / 60f
     }

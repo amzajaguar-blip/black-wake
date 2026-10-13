@@ -227,6 +227,15 @@ object GameSimulation {
         var burstStartedThisFrame = false
         var burstEndedThisFrame = false
 
+        // Update heat lock timer
+        if (newBurst.heatLock > 0f) {
+            newBurst = newBurst.copy(heatLock = max(0f, newBurst.heatLock - dt))
+        }
+        // Update dive lock timer
+        if (newBurst.diveLock > 0f) {
+            newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
+        }
+
         // Re-arm: whenever the lever is low, the latch arms
         if (throttle <= 0.8f) {
             newBurst = newBurst.copy(armed = true)
@@ -262,15 +271,6 @@ object GameSimulation {
             } else {
                 newBurst = newBurst.copy(timer = updatedTimer)
             }
-        }
-
-        // Update heat lock timer
-        if (newBurst.heatLock > 0f) {
-            newBurst = newBurst.copy(heatLock = max(0f, newBurst.heatLock - dt))
-        }
-        // Update dive lock timer
-        if (newBurst.diveLock > 0f) {
-            newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
         }
 
         // Check for burst end due to lever release or fuel exhaustion

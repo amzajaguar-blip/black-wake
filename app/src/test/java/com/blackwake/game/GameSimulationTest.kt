@@ -773,7 +773,7 @@ class GameSimulationTest {
         val midBurst = simulate(afterCross.run.copy(throttle = 0.9f), 0.5f, RunInput())
         assertEquals(expectedSpeed, midBurst.speedFactor, 0.01f)
         // After full burst duration, burst should end and heat lock active
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
     }
@@ -797,7 +797,7 @@ class GameSimulationTest {
         assertTrue(afterCross.run.burst.active)
         val fuelAfterCross = afterCross.run.fuel
         // Simulate 1 second of burst
-        val afterOneSec = simulate(afterCross.run.copy(throttle = 0.9f), 1.0f, RunInput())
+        val afterOneSec = step(afterCross.run.copy(throttle = 0.9f), RunInput(), dt = 1.0f).run
         val fuelAfterOneSec = afterOneSec.fuel
         // Fuel drained should be approximately 4.5 * boat.fuelUse * 1.0
         val expectedDrain = 4.5f * boatSpec(progress.boat).fuelUse
@@ -820,7 +820,7 @@ class GameSimulationTest {
         val expectedAfterCross = 0.1f + 0.08f
         assertEquals(expectedAfterCross, detectionAfterCross, 0.001f)
         // Simulate 1 second of burst
-        val afterOneSec = simulate(afterCross.run.copy(throttle = 0.9f), 1.0f, RunInput())
+        val afterOneSec = step(afterCross.run.copy(throttle = 0.9f), RunInput(), dt = 1.0f).run
         val detectionAfterOneSec = afterOneSec.detection
         // Should have +0.08 (ignition) + 0.12 * 1.0 (active) = +0.20 total
         val expectedAfterOneSec = 0.1f + 0.08f + 0.12f
@@ -853,14 +853,14 @@ class GameSimulationTest {
     fun burstEndsInHeatLockForSevenSeconds() {
         val start = quietRun().copy(fuel = 20f)
         // Prime and sustain burst for 2.5 seconds
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
         val heatLockStart = afterBurst.burst.heatLock
         // Heat lock should start at 7.0 seconds
         assertEquals(7.0f, heatLockStart, 0.001f)
         // Simulate 7 seconds of heat lock
-        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f, RunInput())
+        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
         // After 7 seconds, heat lock should be 0
         assertEquals(0.0f, afterHeatLock.burst.heatLock, 0.001f)
         // During heat lock, throttle should be clamped to 0.5 if lever is high
@@ -871,7 +871,7 @@ class GameSimulationTest {
     fun burstBlocksDiveDuringHeatWithDiveLockTwoSeconds() {
         val start = quietRun().copy(fuel = 20f)
         // Prime and end burst to start heat lock and dive lock
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
         assertTrue(afterBurst.burst.diveLock > 0f)
@@ -883,7 +883,7 @@ class GameSimulationTest {
         // Dive should not be active
         assertFalse(stateWithDiveInput.run.dive.submerged)
         // Simulate 2 seconds of dive lock
-        val afterDiveLock = simulate(afterBurst.copy(throttle = 0.9f), 2.0f, RunInput(diveHeld = true))
+        val afterDiveLock = simulate(afterBurst.copy(throttle = 0.9f), 2.0f + FRAME, RunInput(diveHeld = true))
         // After 2 seconds, dive lock should be 0
         assertEquals(0.0f, afterDiveLock.burst.diveLock, 0.001f)
         // Now dive should be possible if submerged conditions are met
@@ -896,14 +896,14 @@ class GameSimulationTest {
     fun repeatedBurstWaitsForHeat() {
         val start = quietRun().copy(fuel = 20f)
         // First burst
-        val afterFirstBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
+        val afterFirstBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
         assertFalse(afterFirstBurst.burst.active)
         assertTrue(afterFirstBurst.burst.heatLock > 0f)
         // Immediately try to burst again (should not start because heat lock > 0)
         val stateAfterImmediate = step(afterFirstBurst.copy(throttle = 0.9f), RunInput())
         assertFalse(stateAfterImmediate.run.burst.active)
         // Wait for heat lock to expire (7 seconds)
-        val afterHeatLockExpired = simulate(afterFirstBurst.copy(throttle = 0.9f), 7.0f, RunInput())
+        val afterHeatLockExpired = simulate(afterFirstBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
         assertEquals(0.0f, afterHeatLockExpired.burst.heatLock, 0.001f)
         // Now we can burst again
         val stateAfterSecond = step(afterHeatLockExpired.copy(throttle = 0.9f), RunInput())
@@ -918,8 +918,8 @@ class GameSimulationTest {
         val start = quietRun()
         // Simulate a burst and its heat lock to ensure we are in a clean state.
         // We'll do a burst with throttle 0.9 for 2.5s (triggered by high throttle), then wait for heat lock (7s) with throttle 0 to avoid re-triggering.
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f, RunInput())
-        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.0f), 7.0f, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
+        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.0f), 7.0f + FRAME, RunInput())
         // Now we are past burst and heat lock.
         // Set throttle to 1.0 and simulate 2 seconds.
         val run = simulate(afterHeatLock.copy(throttle = 1.0f), 2.0f, RunInput())

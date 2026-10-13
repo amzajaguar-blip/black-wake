@@ -214,20 +214,21 @@ object GameSimulation {
         var flashKind = if (screenFlash > 0f) prev.flashKind else FlashKind.NONE
         fun flash(kind: FlashKind, amount: Float) { screenFlash = max(screenFlash, amount); flashKind = kind }
 
-        // --- Burst State Update ---
-        val burst = prev.burst
+        // --- Engine
         val hasFuel = prev.fuel > 0f
         val throttle = if (hasFuel) prev.throttle else 0f
         val boosting = throttle > 0.8f
         val silent = throttle < 0.2f
-        val submerged = prev.dive.submerged
 
+        // --- Burst State Update
+        val burst = prev.burst
+        val currentlySubmerged = prev.dive.submerged
         var newBurst = burst
         var burstStartedThisFrame = false
         var burstEndedThisFrame = false
 
         // Detect upward crossing into burst zone (throttle > 0.8) to arm burst
-        val wantsBurst = throttle > 0.8f && !submerged && burst.heatLock <= 0f && hasFuel && prev.fuel >= 12f
+        val wantsBurst = throttle > 0.8f && !currentlySubmerged && burst.heatLock <= 0f && hasFuel && prev.fuel >= 12f
         val justEnteredBurstZone = throttle > 0.8f && prev.throttle <= 0.8f
 
         // Start burst if conditions met and we just entered the zone (or armed and conditions met?)
@@ -271,9 +272,6 @@ object GameSimulation {
             newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
         }
 
-        // If burst ended due to fuel exhaustion or lever release, we need to set heat/dive lock
-        // We'll handle that below when checking burst end conditions.
-
         // Check for burst end due to lever release or fuel exhaustion
         if (newBurst.active) {
             val shouldEnd = throttle <= 0.8f || prev.fuel < 12f || !hasFuel
@@ -290,13 +288,10 @@ object GameSimulation {
                 events += GameEvent.Tone(100f, 0.2f, 0.5f)
             }
         }
-        // --- Speed: throttle, vessel
-        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed
-        val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Dive
         val prevDive = prev.dive
-        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f))
+        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f)) && newBurst.diveLock <= 0f
         val wantsDive = input.diveHeld && canDive
         val oxygen = if (wantsDive) max(0f, prevDive.oxygen - dt * 25f)
         else min(100f, prevDive.oxygen + dt * 15f)
@@ -308,7 +303,10 @@ object GameSimulation {
         val dive = DiveState(submerged = submerged, oxygen = oxygen, lockedOut = lockedOut)
 
         // --- Speed: throttle, vessel
-        val targetSpeed = (0.8f + throttle * 0.4f) * boat.speed
+        val normalSpeed = (0.8f + throttle * 0.4f) * boat.speed
+        val heatClampedThrottle = if (newBurst.heatLock > 0f) min(throttle, 0.5f) else throttle
+        val heatClampedSpeed = (0.8f + heatClampedThrottle * 0.4f) * boat.speed
+        val targetSpeed = if (newBurst.active) 1.70f * boat.speed else heatClampedSpeed
         val speedFactor = prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
@@ -734,6 +732,7 @@ object GameSimulation {
             dive = dive,
             sonar = sonar,
             flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt), markerTimer = max(0f, prev.flare.markerTimer - dt)),
+            burst = newBurst,
             comboCounter = combo,
             comboMultiplier = comboMultiplier,
             cameraShake = cameraShake,

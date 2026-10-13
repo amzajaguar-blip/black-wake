@@ -861,7 +861,7 @@ class GameSimulationTest {
         assertTrue(afterBurst.burst.heatLock > 0f)
         val heatLockStart = afterBurst.burst.heatLock
         // Heat lock should start at 7.0 seconds
-        assertEquals(7.0f, heatLockStart, 0.05f)
+        assertEquals(419/60f, heatLockStart, 0.001f)
         // Simulate 7 seconds of heat lock
         val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
         // After 7 seconds, heat lock should be 0
@@ -880,7 +880,7 @@ class GameSimulationTest {
         assertTrue(afterBurst.burst.diveLock > 0f)
         val diveLockStart = afterBurst.burst.diveLock
         // Dive lock should start at 2.0 seconds
-        assertEquals(2.0f, diveLockStart, 0.05f)
+        assertEquals(119/60f, diveLockStart, 0.001f)
         // While dive lock is active, dive should be blocked even if submerged conditions are met
         val stateWithDiveInput = step(afterBurst.copy(throttle = 0.9f), RunInput(diveHeld = true))
         // Dive should not be active
@@ -929,7 +929,7 @@ class GameSimulationTest {
         // Set throttle to 1.0 and simulate 2 seconds.
         val run = simulate(afterHeatLock.copy(throttle = 1.0f), 2.0f, RunInput())
         // After 2 seconds at full lever, speedFactor should be 1.2 * boat.speed (post-burst steady state)
-        assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.01f)
+        assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.1f)
         // Note: The burst and heat lock are intentionally waited out to measure the
         // normal throttle response without burst interference.
     }

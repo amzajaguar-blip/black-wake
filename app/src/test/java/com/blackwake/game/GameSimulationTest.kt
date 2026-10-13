@@ -636,25 +636,6 @@ class GameSimulationTest {
 
     @Test
     fun flareAffectsOnlyPursuersWithinReach() {
-    @Test
-    fun flareGraceExpiresAfterTwoSeconds() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT)
-        val run = quietRun().copy(detection = 0.8f, pursuers = listOf(pursuer), pursuitCooldown = 100f)
-        val (afterFlare, _) = GameSimulation.launchFlare(run)
-        val dazzled = afterFlare.pursuers.single()
-        assertEquals(PursuerState.SEARCH, dazzled.state)
-        assertEquals(2.0f, dazzled.flareGrace, 0.001f)
-        // Loud player, first second: grace still running, reacquisition blocked
-        val afterOneSecond = step(afterFlare, dt = 1.0f).run
-        val stillBlinded = afterOneSecond.pursuers.single()
-        assertEquals(PursuerState.SEARCH, stillBlinded.state)
-        assertTrue(stillBlinded.flareGrace > 0f)
-        // Second second: grace reaches zero, loud reacquisition resumes
-        val afterTwoSeconds = step(afterOneSecond, dt = 1.0f).run
-        val reacquired = afterTwoSeconds.pursuers.single()
-        assertEquals(0.0f, reacquired.flareGrace, 0.001f)
-        assertEquals(PursuerState.PURSUIT, reacquired.state)
-    }
         val pursuerClose = Pursuer(id = 1, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT) // y=70, playerY=85 -> diff=15 <=55
         val pursuerFar = Pursuer(id = 2, type = EnemyBoatType.PATROL, x = 0f, y = 200f, state = PursuerState.PURSUIT) // diff=115 >55
         val run = quietRun().copy(pursuers = listOf(pursuerClose, pursuerFar))
@@ -737,6 +718,24 @@ class GameSimulationTest {
         // Events
         assertFalse(firstEvents.isEmpty())
         assertFalse(secondEvents.isEmpty())
+    }
+
+    @Test
+    fun flareGraceExpiresAfterTwoSeconds() {
+        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT)
+        val run = quietRun().copy(detection = 0.5f, pursuers = listOf(pursuer), pursuitCooldown = 100f)
+        val (afterFlare, _) = GameSimulation.launchFlare(run)
+        val dazzled = afterFlare.pursuers.single()
+        assertEquals(PursuerState.SEARCH, dazzled.state)
+        assertEquals(2.0f, dazzled.flareGrace, 0.001f)
+        val afterOneSecond = step(afterFlare, dt = 1.0f).run
+        val stillBlinded = afterOneSecond.pursuers.single()
+        assertEquals(PursuerState.SEARCH, stillBlinded.state)
+        assertTrue(stillBlinded.flareGrace > 0f)
+        val afterTwoSeconds = step(afterOneSecond, dt = 1.0f).run
+        val reacquired = afterTwoSeconds.pursuers.single()
+        assertEquals(0.0f, reacquired.flareGrace, 0.001f)
+        assertEquals(PursuerState.PURSUIT, reacquired.state)
     }
 
     private companion object {

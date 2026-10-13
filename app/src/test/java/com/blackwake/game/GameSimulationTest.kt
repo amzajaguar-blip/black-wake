@@ -251,7 +251,6 @@ class GameSimulationTest {
     }
 
     @Test
-    @Test
     fun campaignDataIsWellFormed() {
         assertEquals(8, CHAPTERS.size)
         for (chapter in CHAPTERS) {
@@ -799,7 +798,7 @@ class GameSimulationTest {
         val fuelAfterCross = afterCross.run.fuel
         // Simulate 1 second of burst
         val afterOneSec = simulate(afterCross.run.copy(throttle = 0.9f), 1.0f, RunInput())
-        val fuelAfterOneSec = afterOneSec.run.fuel
+        val fuelAfterOneSec = afterOneSec.fuel
         // Fuel drained should be approximately 4.5 * boat.fuelUse * 1.0
         val expectedDrain = 4.5f * boatSpec(progress.boat).fuelUse
         val actualDrain = fuelAfterCross - fuelAfterOneSec
@@ -822,7 +821,7 @@ class GameSimulationTest {
         assertEquals(expectedAfterCross, detectionAfterCross, 0.001f)
         // Simulate 1 second of burst
         val afterOneSec = simulate(afterCross.run.copy(throttle = 0.9f), 1.0f, RunInput())
-        val detectionAfterOneSec = afterOneSec.run.detection
+        val detectionAfterOneSec = afterOneSec.detection
         // Should have +0.08 (ignition) + 0.12 * 1.0 (active) = +0.20 total
         val expectedAfterOneSec = 0.1f + 0.08f + 0.12f
         assertEquals(expectedAfterOneSec, detectionAfterOneSec, 0.001f)
@@ -842,7 +841,7 @@ class GameSimulationTest {
         assertTrue(stateBurst.run.burst.active)
         // Simulate 1 second of burst
         val afterOneSec = simulate(stateBurst.run.copy(throttle = 0.9f), 1.0f, RunInput())
-        val pursuerAfter = afterOneSec.run.pursuers.single()
+        val pursuerAfter = afterOneSec.pursuers.single()
         val yAfter = pursuerAfter.y
         // Pursuer should have fallen back by 18 units/s * 1s = 18 units, but capped at 110
         val expectedY = (yBefore + 18f).coerceAtMost(110f)
@@ -901,13 +900,13 @@ class GameSimulationTest {
         assertFalse(afterFirstBurst.burst.active)
         assertTrue(afterFirstBurst.burst.heatLock > 0f)
         // Immediately try to burst again (should not start because heat lock > 0)
-        val stateAfterImmediate = step(afterFirstBurst.run.copy(throttle = 0.9f), RunInput())
+        val stateAfterImmediate = step(afterFirstBurst.copy(throttle = 0.9f), RunInput())
         assertFalse(stateAfterImmediate.run.burst.active)
         // Wait for heat lock to expire (7 seconds)
         val afterHeatLockExpired = simulate(afterFirstBurst.copy(throttle = 0.9f), 7.0f, RunInput())
         assertEquals(0.0f, afterHeatLockExpired.burst.heatLock, 0.001f)
         // Now we can burst again
-        val stateAfterSecond = step(afterHeatLockExpired.run.copy(throttle = 0.9f), RunInput())
+        val stateAfterSecond = step(afterHeatLockExpired.copy(throttle = 0.9f), RunInput())
         assertTrue(stateAfterSecond.run.burst.active)
     }
 

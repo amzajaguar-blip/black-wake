@@ -64,7 +64,7 @@ class GameSimulationTest {
         assertTrue(run.dive.lockedOut)
         assertTrue("oxygen refilled above the dive threshold", run.dive.oxygen >= 10f)
         run = simulate(run, 1f, RunInput(diveHeld = true))
-        assertFalse("holding the button must not restart the dive", run.dive.submitted)
+        assertFalse("holding the button must not restart the dive", run.dive.submerged)
 
         run = step(run, RunInput(diveHeld = false)).run
         assertFalse(run.dive.lockedOut)
@@ -118,7 +118,7 @@ class GameSimulationTest {
     @Test
     fun ramDamagesTheHullUnlessSubmerged() {
         val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        $base = quietRun().copy(pursuers = listOf(ram))
+        val base = quietRun().copy(pursuers = listOf(ram))
 
         val hit = step(base).run
         assertEquals(100f - PursuerAI.spec(EnemyBoatType.PATROL).ramDamage, hit.hull, 0.5f)
@@ -217,7 +217,7 @@ class GameSimulationTest {
     @Test
     fun pursuitWaveAlwaysLeavesAnEscapeLane() {
         val run = step(quietRun().copy(detection = 0.95f)).run
-        val wave = run.entities.filter { it.type == EntityType.ENEMY }
+        val wave = run.entities.filter { it.type = EntityType.ENEMY }
         assertEquals(2, wave.size)
         assertEquals(2, wave.map { it.lane }.distinct().size)
     }
@@ -229,14 +229,14 @@ class GameSimulationTest {
             Entity(id = 2, type = EntityType.FORK, lane = 1, x = 0f, z = 1f, value = 1),
             Entity(id = 3, type = EntityType.FORK, lane = 2, x = 1f, z = 1f, value = 2)
         )
-        $run = step(quietRun().copy(entities = forks)).run
+        val run = step(quietRun().copy(entities = forks)).run
         assertEquals(3, run.intel)
-        assertTrue(run.entities.none { it.type == EntityType.FORK })
+        assertTrue(run.entities.none { it.type = EntityType.FORK })
     }
 
     @Test
     fun runningDryDrainsTheHull() {
-        $run = simulate(quietRun().copy(fuel = 0f), 2f)
+        val run = simulate(quietRun().copy(fuel = 0f), 2f)
         assertTrue(run.hull < 100f)
         assertTrue(run.fuelOutNotified)
     }
@@ -337,17 +337,17 @@ class GameSimulationTest {
     @Test
     fun sonarHazardHapticFiresOncePerHazardId() {
         val hazard = Entity(id = 1, type = EntityType.MINE, lane = 1, x = 0f, z = 50f)
-        $run = quietRun().copy(entities = listOf(hazard), detection = 0.1f)
+        val run = quietRun().copy(entities = listOf(hazard), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Ping speed 80 units/s, distance 50 units -> time to reach = 50/80 = 0.625s
         // Simulate 0.6s (just before reaching)
-        $step1 = step(sonarRun, dt = 0.6f)
+        val step1 = step(sonarRun, dt = 0.6f)
         assertFalse("no haptic yet", step1.events.any { it is GameEvent.Vibrate })
         // Step a bit more to reach the hazard (total 0.65s)
-        $step2 = step(step1.run, dt = 0.05f)
+        val step2 = step(step1.run, dt = 0.05f)
         assertTrue("haptic fired once", step2.events.any { it is GameEvent.Vibrate })
         // Step well past the hazard (total 1.65s)
-        $step3 = step(step2.run, dt = 1.0f)
+        val step3 = step(step2.run, dt = 1.0f)
         assertFalse("no additional haptic", step3.events.any { it is GameEvent.Vibrate })
     }
 
@@ -355,11 +355,13 @@ class GameSimulationTest {
     fun sonarSearchingPursuerInvestigatesPingOrigin() {
         val pingOriginX = 0.0f
         val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = -0.6f, y = 70f, state = PursuerState.SEARCH, stateTimer = 0f, lockX = 0f)
-        $run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f, playerX = pingOriginX)
+        val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f, playerX = pingOriginX)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within 2s investigation window)
-        $investigated = simulate(sonarRun, 0.5f)
-        $pursued = investigated.pursuers.first()
+        val investigated = simulate(sonarRun, 0.5f)
+        val pursued = investigated.pursuers.first()
+        val initialDistance = abs(pursuer.x - pingOriginX)
+        val currentDistance = abs(pursued.x - pingOriginX)
         // Should be closer to the ping origin than initially
         assertTrue(currentDistance < initialDistance)
         // Should still be investigating (state SEARCH)
@@ -369,10 +371,10 @@ class GameSimulationTest {
     @Test
     fun sonarAttackingPursuerKeepsAttackState() {
         val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0f, attackTimer = 0.0f)
-        $run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
+        val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within the 2s investigation window)
-        $investigated = simulate(sonarRun, 0.5f)
+        val investigated = simulate(sonarRun, 0.5f)
         $pursued = investigated.pursuers.first()
         // Should still be in ATTACKING (INTERCEPT) state
         assertEquals(PursuerState.INTERCEPT, pursued.state)
@@ -402,7 +404,7 @@ class GameSimulationTest {
         assertTrue(secondRun.sonar.active) // still active from first ping
         assertEquals(0, secondEvents.size)
         // Wait for ping propagation to end (1.4s > 110/80=1.375)
-        $stepped = simulate(secondRun, 1.4f)
+        val stepped = simulate(secondRun, 1.4f)
         // Now sonar.active should be false, but cooldown > 0
         assertFalse(stepped.sonar.active)
         assertTrue(stepped.sonar.cooldown > 0f)
@@ -466,35 +468,35 @@ class GameSimulationTest {
         // Cooldown should be 6 - min(0,2) = 6s
         assertEquals(6f, sonarRun0.sonar.cooldown, 0.001f)
         // Step 1 second
-        $after1s = step(sonarRun0, dt = 1.0f)
+        val after1s = step(sonarRun0, dt = 1.0f)
         assertEquals(5f, after1s.run.sonar.cooldown, 0.001f)
         // Step another 1 second
-        $after2s = step(after1s.run, dt = 1.0f)
+        val after2s = step(after1s.run, dt = 1.0f)
         assertEquals(4f, after2s.run.sonar.cooldown, 0.001f)
         // Step until cooldown reaches 0
         // We can step 4 more seconds to go from 4 to 0
-        $after6s = step(after2s.run, dt = 4.0f).run
+        val after6s = step(after2s.run, dt = 4.0f).run
         assertEquals(0f, after6s.sonar.cooldown, 0.001f)
         // Now we should be able to activate again
-        $secondRun = GameSimulation.launchSonar(after6s)
+        val (secondRun, _) = GameSimulation.launchSonar(after6s)
         assertTrue(secondRun.sonar.active)
         // And cooldown reset to 6s
         assertEquals(6f, secondRun.sonar.cooldown, 0.001f)
 
         // Test with radar level 3 (should give cooldown 4s)
-        $modules3 = Modules(radar = 3)
-        $run3 = quietRun().copy(modules = modules3)
-        $sonarRun3 = GameSimulation.launchSonar(run3)
+        val modules3 = Modules(radar = 3)
+        val run3 = quietRun().copy(modules = modules3)
+        val (sonarRun3, _) = GameSimulation.launchSonar(run3)
         // Cooldown should be 6 - min(3,2) = 6-2=4s
         assertEquals(4f, sonarRun3.sonar.cooldown, 0.001f)
         // Step 1 second -> 3s
-        $after1s3 = step(sonarRun3, dt = 1.0f)
+        val after1s3 = step(sonarRun3, dt = 1.0f)
         assertEquals(3f, after1s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 2s
-        $after2s3 = step(after1s3.run, dt = 1.0f)
+        val after2s3 = step(after1s3.run, dt = 1.0f)
         assertEquals(2f, after2s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 1s
-        $after3s3 = step(after2s3.run, dt = 1.0f)
+        $after3s3 = step(after1s3.run, dt = 1.0f)
         assertEquals(1f, after3s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 0s
         $after4s3 = step(after3s3.run, dt = 1.0f)
@@ -520,7 +522,7 @@ class GameSimulationTest {
     fun flareHunterInvestigatesAtOnePointFiveRate() {
         // Create a HUNTER pursuer in SEARCH state, outside reach, with flare marker active
         val markerX = 0.5f
-        $run = quietRun()
+        val run = quietRun()
             .copy(
                 flare = FlareState(charges = 3, timer = 0f, markerX = markerX, markerTimer = 4f),
                 pursuers = listOf(
@@ -550,7 +552,7 @@ class GameSimulationTest {
             true, // flareInvestigationActive
             markerX // flareInvestigationOriginX
         )
-        $updated = PursuerAI.step(run.pursuers.first(), ctx, run.pursuers)
+        val updated = PursuerAI.step(run.pursuers.first(), ctx, run.pursuers)
         // HUNTER should move toward the markerX (0.5f) with increased steering rate
         // Since it starts at x=0f and markerX=0.5f, it should move positive
         assertTrue(updated.x > 0f)

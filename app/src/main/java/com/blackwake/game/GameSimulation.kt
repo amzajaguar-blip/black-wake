@@ -203,7 +203,7 @@ object GameSimulation {
         val burst = run.burst
         val dive = run.dive
         // Guards: emerso, hull ≤ maxHull−10, fuel ≥ 15, throttle ≤ 0.3, !burst.active, burst.heatLock ≤ 0, invulnerable ≤ 0, !repair.active, kits ≥ 1
-        if (!run.dive.submerged ||
+        if (run.dive.submerged ||
             run.hull > run.maxHull - 10f ||
             run.fuel < 15f ||
             run.throttle > 0.3f ||

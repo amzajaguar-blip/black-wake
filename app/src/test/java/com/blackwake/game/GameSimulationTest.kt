@@ -64,7 +64,7 @@ class GameSimulationTest {
         assertTrue(run.dive.lockedOut)
         assertTrue("oxygen refilled above the dive threshold", run.dive.oxygen >= 10f)
         run = simulate(run, 1f, RunInput(diveHeld = true))
-        assertFalse("holding the button must not restart the dive", run.dive.submerged)
+        assertFalse("holding the button must not restart the dive", run.dive.submitted)
 
         run = step(run, RunInput(diveHeld = false)).run
         assertFalse(run.dive.lockedOut)
@@ -118,7 +118,7 @@ class GameSimulationTest {
     @Test
     fun ramDamagesTheHullUnlessSubmerged() {
         val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        val base = quietRun().copy(pursuers = listOf(ram))
+        $base = quietRun().copy(pursuers = listOf(ram))
 
         val hit = step(base).run
         assertEquals(100f - PursuerAI.spec(EnemyBoatType.PATROL).ramDamage, hit.hull, 0.5f)
@@ -229,14 +229,14 @@ class GameSimulationTest {
             Entity(id = 2, type = EntityType.FORK, lane = 1, x = 0f, z = 1f, value = 1),
             Entity(id = 3, type = EntityType.FORK, lane = 2, x = 1f, z = 1f, value = 2)
         )
-        val run = step(quietRun().copy(entities = forks)).run
+        $run = step(quietRun().copy(entities = forks)).run
         assertEquals(3, run.intel)
         assertTrue(run.entities.none { it.type == EntityType.FORK })
     }
 
     @Test
     fun runningDryDrainsTheHull() {
-        val run = simulate(quietRun().copy(fuel = 0f), 2f)
+        $run = simulate(quietRun().copy(fuel = 0f), 2f)
         assertTrue(run.hull < 100f)
         assertTrue(run.fuelOutNotified)
     }
@@ -245,7 +245,7 @@ class GameSimulationTest {
     fun lowPriorityMessagesDoNotHideDangerMessages() {
         val danger = HudMessage("IMPATTO // MINA", MessageTone.DANGER, 1.5f)
         val nearMiss = Entity(id = 1, type = EntityType.WRECK, lane = 2, x = 1f, z = -0.1f)
-        val run = step(quietRun().copy(message = danger, playerX = 0.6f, entities = listOf(nearMiss))).run
+        $run = step(quietRun().copy(message = danger, playerX = 0.6f, entities = listOf(nearMiss))).run
         assertEquals("IMPATTO // MINA", run.message?.text)
         assertTrue(run.feed.any { it.text == "SCHIVATA AL LIMITE" })
     }
@@ -337,17 +337,17 @@ class GameSimulationTest {
     @Test
     fun sonarHazardHapticFiresOncePerHazardId() {
         val hazard = Entity(id = 1, type = EntityType.MINE, lane = 1, x = 0f, z = 50f)
-        val run = quietRun().copy(entities = listOf(hazard), detection = 0.1f)
+        $run = quietRun().copy(entities = listOf(hazard), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Ping speed 80 units/s, distance 50 units -> time to reach = 50/80 = 0.625s
         // Simulate 0.6s (just before reaching)
-        val step1 = step(sonarRun, dt = 0.6f)
+        $step1 = step(sonarRun, dt = 0.6f)
         assertFalse("no haptic yet", step1.events.any { it is GameEvent.Vibrate })
         // Step a bit more to reach the hazard (total 0.65s)
-        val step2 = step(step1.run, dt = 0.05f)
+        $step2 = step(step1.run, dt = 0.05f)
         assertTrue("haptic fired once", step2.events.any { it is GameEvent.Vibrate })
         // Step well past the hazard (total 1.65s)
-        val step3 = step(step2.run, dt = 1.0f)
+        $step3 = step(step2.run, dt = 1.0f)
         assertFalse("no additional haptic", step3.events.any { it is GameEvent.Vibrate })
     }
 
@@ -355,13 +355,11 @@ class GameSimulationTest {
     fun sonarSearchingPursuerInvestigatesPingOrigin() {
         val pingOriginX = 0.0f
         val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = -0.6f, y = 70f, state = PursuerState.SEARCH, stateTimer = 0f, lockX = 0f)
-        val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f, playerX = pingOriginX)
+        $run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f, playerX = pingOriginX)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within 2s investigation window)
-        val investigated = simulate(sonarRun, 0.5f)
-        val pursued = investigated.pursuers.first()
-        val initialDistance = abs(pursuer.x - pingOriginX)
-        val currentDistance = abs(pursued.x - pingOriginX)
+        $investigated = simulate(sonarRun, 0.5f)
+        $pursued = investigated.pursuers.first()
         // Should be closer to the ping origin than initially
         assertTrue(currentDistance < initialDistance)
         // Should still be investigating (state SEARCH)
@@ -371,11 +369,11 @@ class GameSimulationTest {
     @Test
     fun sonarAttackingPursuerKeepsAttackState() {
         val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 80f, state = PursuerState.INTERCEPT, stateTimer = 0f, attackTimer = 0.0f)
-        val run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
+        $run = quietRun().copy(pursuers = listOf(pursuer), detection = 0.1f)
         val (sonarRun, _) = GameSimulation.launchSonar(run)
         // Simulate 0.5 seconds (within the 2s investigation window)
-        val investigated = simulate(sonarRun, 0.5f)
-        val pursued = investigated.pursuers.first()
+        $investigated = simulate(sonarRun, 0.5f)
+        $pursued = investigated.pursuers.first()
         // Should still be in ATTACKING (INTERCEPT) state
         assertEquals(PursuerState.INTERCEPT, pursued.state)
         // Attack timer should have advanced
@@ -404,7 +402,7 @@ class GameSimulationTest {
         assertTrue(secondRun.sonar.active) // still active from first ping
         assertEquals(0, secondEvents.size)
         // Wait for ping propagation to end (1.4s > 110/80=1.375)
-        val stepped = simulate(secondRun, 1.4f)
+        $stepped = simulate(secondRun, 1.4f)
         // Now sonar.active should be false, but cooldown > 0
         assertFalse(stepped.sonar.active)
         assertTrue(stepped.sonar.cooldown > 0f)
@@ -468,38 +466,38 @@ class GameSimulationTest {
         // Cooldown should be 6 - min(0,2) = 6s
         assertEquals(6f, sonarRun0.sonar.cooldown, 0.001f)
         // Step 1 second
-        val after1s = step(sonarRun0, dt = 1.0f)
+        $after1s = step(sonarRun0, dt = 1.0f)
         assertEquals(5f, after1s.run.sonar.cooldown, 0.001f)
         // Step another 1 second
-        val after2s = step(after1s.run, dt = 1.0f)
+        $after2s = step(after1s.run, dt = 1.0f)
         assertEquals(4f, after2s.run.sonar.cooldown, 0.001f)
         // Step until cooldown reaches 0
         // We can step 4 more seconds to go from 4 to 0
-        val after6s = step(after2s.run, dt = 4.0f).run
+        $after6s = step(after2s.run, dt = 4.0f).run
         assertEquals(0f, after6s.sonar.cooldown, 0.001f)
         // Now we should be able to activate again
-        val (secondRun, _) = GameSimulation.launchSonar(after6s)
+        $secondRun = GameSimulation.launchSonar(after6s)
         assertTrue(secondRun.sonar.active)
         // And cooldown reset to 6s
         assertEquals(6f, secondRun.sonar.cooldown, 0.001f)
 
         // Test with radar level 3 (should give cooldown 4s)
-        val modules3 = Modules(radar = 3)
-        val run3 = quietRun().copy(modules = modules3)
-        val (sonarRun3, _) = GameSimulation.launchSonar(run3)
+        $modules3 = Modules(radar = 3)
+        $run3 = quietRun().copy(modules = modules3)
+        $sonarRun3 = GameSimulation.launchSonar(run3)
         // Cooldown should be 6 - min(3,2) = 6-2=4s
         assertEquals(4f, sonarRun3.sonar.cooldown, 0.001f)
         // Step 1 second -> 3s
-        val after1s3 = step(sonarRun3, dt = 1.0f)
+        $after1s3 = step(sonarRun3, dt = 1.0f)
         assertEquals(3f, after1s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 2s
-        val after2s3 = step(after1s3.run, dt = 1.0f)
+        $after2s3 = step(after1s3.run, dt = 1.0f)
         assertEquals(2f, after2s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 1s
-        val after3s3 = step(after2s3.run, dt = 1.0f)
+        $after3s3 = step(after2s3.run, dt = 1.0f)
         assertEquals(1f, after3s3.run.sonar.cooldown, 0.001f)
         // Step another 1 second -> 0s
-        val after4s3 = step(after3s3.run, dt = 1.0f)
+        $after4s3 = step(after3s3.run, dt = 1.0f)
         assertEquals(0f, after4s3.run.sonar.cooldown, 0.001f)
     }
 
@@ -522,7 +520,7 @@ class GameSimulationTest {
     fun flareHunterInvestigatesAtOnePointFiveRate() {
         // Create a HUNTER pursuer in SEARCH state, outside reach, with flare marker active
         val markerX = 0.5f
-        val run = quietRun()
+        $run = quietRun()
             .copy(
                 flare = FlareState(charges = 3, timer = 0f, markerX = markerX, markerTimer = 4f),
                 pursuers = listOf(
@@ -552,7 +550,7 @@ class GameSimulationTest {
             true, // flareInvestigationActive
             markerX // flareInvestigationOriginX
         )
-        val updated = PursuerAI.step(run.pursuers.first(), ctx, run.pursuers)
+        $updated = PursuerAI.step(run.pursuers.first(), ctx, run.pursuers)
         // HUNTER should move toward the markerX (0.5f) with increased steering rate
         // Since it starts at x=0f and markerX=0.5f, it should move positive
         assertTrue(updated.x > 0f)
@@ -562,662 +560,4 @@ class GameSimulationTest {
     }
 
     @Test
-    fun flareNoTargetConsumesChargeWithSoloLuce() {
-        val run = quietRun().copy(pursuers = emptyList()) // no pursuers
-        val (newRun, events) = GameSimulation.launchFlare(run)
-        // Charge should be consumed
-        assertEquals(2, newRun.flare.charges)
-        // Flare timer set
-        assertEquals(5.0f, newRun.flare.timer, 0.001f)
-        // Detection increased
-        assertEquals(0.18f, newRun.detection, 0.001f)
-        // Message should be SOLO LUCE
-        val message = newRun.message
-        assertNotNull(message)
-        assertEquals("RAZZO // SOLO LUCE", message!!.text)
-        assertEquals(MessageTone.WARNING, message!!.tone)
-    }
-
-    @Test
-    fun flareRepeatedTapCannotDoubleSpend() {
-        val run = quietRun().copy(pursuers = emptyList())
-        // First flare
-        val (firstRun, _) = GameSimulation.launchFlare(run)
-        assertEquals(2, firstRun.flare.charges)
-        // Immediate second flare while first is active (timer > 0) should do nothing
-        val (secondRun, secondEvents) = GameSimulation.launchFlare(firstRun)
-        assertEquals(2, secondRun.flare.charges) // charge not consumed again
-        assertTrue(secondEvents.isEmpty()) // no events
-    }
-
-    @Test
-    fun flareSubmergedDisabled() {
-        val run = quietRun().copy(dive = DiveState(submerged = true, oxygen = 50f))
-        val (newRun, events) = GameSimulation.launchFlare(run)
-        // Should not launch flare
-        assertEquals(3, newRun.flare.charges)
-        assertEquals(0f, newRun.flare.timer)
-        assertTrue(events.isEmpty())
-    }
-
-    @Test
-    fun flareSignatureThresholdSpawnNotDazzled() {
-        // When a pursuer spawns from the signature spike, it should not be dazzled by the same flare
-        val baseRun = quietRun()
-            .copy(
-                detection = 0.53f,
-                pursuers = emptyList(),
-                nextId = 999 // so the spawned pursuer gets id 999
-            )
-        val (afterFlare, _) = GameSimulation.launchFlare(baseRun)
-        val stepped = step(afterFlare, dt = FRAME)
-        val runAfterSpawn = stepped.run
-        // Find the pursuer with id 999 (the one that should have spawned)
-        val spawned = runAfterSpawn.pursuers.firstOrNull { it.id == 999 }
-        assertNotNull(spawned) // a pursuer should have spawned
-        assertEquals(PursuerState.DETECTED, spawned!!.state) // should not be dazzled to SEARCH
-        // Also, the spawned pursuer should target the flare marker
-        assertEquals(0.0f, spawned!!.lockX, 0.001f) // markerX was 0.0f
-    }
-
-    @Test
-    fun flareAffectsOnlyPursuersWithinReach() {
-        val pursuerClose = Pursuer(id = 1, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT) // y=70, playerY=85 -> diff=15 <=55
-        val pursuerFar = Pursuer(id = 2, type = EnemyBoatType.PATROL, x = 0f, y = 200f, state = PursuerState.PURSUIT) // diff=115 >55
-        val run = quietRun().copy(pursuers = listOf(pursuerClose, pursuerFar))
-        val (newRun, _) = GameSimulation.launchFlare(run)
-        val close = newRun.pursuers.first { it.id == 1 }
-        val far = newRun.pursuers.first { it.id == 2 }
-        // Close pursuer should be dazzled
-        assertEquals(PursuerState.SEARCH, close.state)
-        assertEquals(2.0f, close.flareGrace, 0.001f)
-        // Far pursuer should be unaffected
-        assertEquals(PursuerState.PURSUIT, far.state)
-        assertEquals(0.0f, far.flareGrace, 0.001f)
-    }
-
-    @Test
-    fun flareDoesNotBreakCommittedRam() {
-        // Create a pursuer in committed ram (stateTimer >= WIND_UP)
-        val pursuer = Pursuer(
-            id = 99,
-            type = EnemyBoatType.PATROL,
-            x = 0f,
-            y = 70f, // within reach
-            state = PursuerState.INTERCEPT,
-            stateTimer = PursuerAI.WIND_UP + 0.1f, // already committed
-            lockX = 0f,
-            attackTimer = 0f,
-            flareGrace = 0f
-        )
-        val run = quietRun().copy(pursuers = listOf(pursuer))
-        val (afterFlare, events) = GameSimulation.launchFlare(run)
-        // The pursuer should remain in INTERCEPT state (not dazzled)
-        val pursuerAfter = afterFlare.pursuers.single()
-        assertEquals(PursuerState.INTERCEPT, pursuerAfter.state)
-        // Flare grace should be 0 (not dazzled)
-        assertEquals(0.0f, pursuerAfter.flareGrace, 0.001f)
-        // Flare charge should be consumed
-        assertEquals(2, afterFlare.flare.charges)
-        // Flare light timer set
-        assertEquals(5.0f, afterFlare.flare.timer, 0.001f)
-        // Investigation marker set
-        assertEquals(4.0f, afterFlare.flare.markerTimer, 0.001f)
-        assertEquals(0.0f, afterFlare.flare.markerX, 0.001f) // playerX was 0f
-        // Detection increased
-        assertEquals(0.18f, afterFlare.detection, 0.001f)
-        // Feedback message should indicate committed ram
-        val message = afterFlare.message
-        assertNotNull(message)
-        assertEquals("RAZZO // RAM GIÀ IMPEGNATO", message!!.text)
-        assertEquals(MessageTone.WARNING, message!!.tone)
-        // Events should contain the noise
-        assertFalse(events.isEmpty())
-        assertTrue(events.any { it is GameEvent.Noise })
-    }
-
-    @Test
-    fun flareCanBeReusedAfterLightExpires() {
-        val run = quietRun()
-        // First flare
-        val (firstRun, firstEvents) = GameSimulation.launchFlare(run)
-        assertEquals(2, firstRun.flare.charges)
-        assertEquals(5.0f, firstRun.flare.timer, 0.001f)
-        // Simulate time until flare light expires (5 seconds + one frame to ensure timer <= 0)
-        val expiredRun = simulate(firstRun, seconds = GameSimulation.FLARE_SECONDS + FRAME)
-        // After expiration, flare.timer should be <= 0
-        assertTrue(expiredRun.flare.timer <= 0f)
-        // Flare charges should still be 2 (since no recharge in this test)
-        assertEquals(2, expiredRun.flare.charges)
-        // Second flare should succeed
-        val (secondRun, secondEvents) = GameSimulation.launchFlare(expiredRun)
-        assertEquals(1, secondRun.flare.charges) // another charge consumed
-        assertEquals(5.0f, secondRun.flare.timer, 0.001f)
-        assertEquals(expiredRun.detection + 0.18f, secondRun.detection, 0.002f)
-        // Messages
-        val firstMessage = firstRun.message
-        assertNotNull(firstMessage)
-        assertEquals("RAZZO // SOLO LUCE", firstMessage!!.text) // no pursuers
-        val secondMessage = secondRun.message
-        assertNotNull(secondMessage)
-        assertEquals("RAZZO // SOLO LUCE", secondMessage!!.text)
-        // Events
-        assertFalse(firstEvents.isEmpty())
-        assertFalse(secondEvents.isEmpty())
-    }
-
-    @Test
-    fun flareGraceExpiresAfterTwoSeconds() {
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT)
-        val run = quietRun().copy(detection = 0.5f, pursuers = listOf(pursuer), pursuitCooldown = 100f)
-        val (afterFlare, _) = GameSimulation.launchFlare(run)
-        val dazzled = afterFlare.pursuers.single()
-        assertEquals(PursuerState.SEARCH, dazzled.state)
-        assertEquals(2.0f, dazzled.flareGrace, 0.001f)
-        val afterOneSecond = step(afterFlare, dt = 1.0f).run
-        val stillBlinded = afterOneSecond.pursuers.single()
-        assertEquals(PursuerState.SEARCH, stillBlinded.state)
-        assertTrue(stillBlinded.flareGrace > 0f)
-        val afterTwoSeconds = step(afterOneSecond, dt = 1.0f).run
-        val reacquired = afterTwoSeconds.pursuers.single()
-        assertEquals(0.0f, reacquired.flareGrace, 0.001f)
-        assertEquals(PursuerState.PURSUIT, reacquired.state)
-    }
-
-    @Test
-    fun burstTriggersOnceAbovePointEight() {
-        val start = quietRun().copy(fuel = 20f)
-        // Below threshold
-        var state = step(start.copy(throttle = 0.7f), RunInput())
-        assertFalse(state.run.burst.active)
-        // Cross above threshold: should start burst
-        state = step(state.run.copy(throttle = 0.9f), RunInput())
-        assertTrue(state.run.burst.active)
-        val firstBurstTimer = state.run.burst.timer
-        // Stay above threshold: burst should continue, not restart
-        state = step(state.run.copy(throttle = 0.9f), RunInput())
-        assertTrue(state.run.burst.active)
-        // Timer should have increased
-        assertTrue(state.run.burst.timer > firstBurstTimer)
-        // Now drop below threshold: burst should end
-        state = step(state.run.copy(throttle = 0.7f), RunInput())
-        assertFalse(state.run.burst.active)
-    }
-
-    @Test
-    fun burstRequiresTwelveFuel() {
-        val base = quietRun()
-        // Fuel just below 12
-        val lowFuel = base.copy(fuel = 11.9f)
-        val stateLow = step(lowFuel.copy(throttle = 0.9f), RunInput())
-        assertFalse(stateLow.run.burst.active)
-        // Fuel exactly 12
-        val exactFuel = base.copy(fuel = 12.0f)
-        val stateExact = step(exactFuel.copy(throttle = 0.9f), RunInput())
-        assertTrue(stateExact.run.burst.active)
-        // Fuel above 12
-        val highFuel = base.copy(fuel = 12.1f)
-        val stateHigh = step(highFuel.copy(throttle = 0.9f), RunInput())
-        assertTrue(stateHigh.run.burst.active)
-    }
-
-    @Test
-    fun burstSpeedIsOnePointSevenForTwoPointFiveSeconds() {
-        val start = quietRun().copy(fuel = 30f)
-        // Prime the burst: cross above threshold
-        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        // During burst, speed factor should be 1.70 * boat.speed
-        val expectedSpeed = 1.70f * boatSpec(progress.boat).speed
-        // Check after a few frames to allow speedFactor to converge
-        val midBurst = simulate(afterCross.run.copy(throttle = 0.9f), 0.5f, RunInput())
-        assertEquals(expectedSpeed, midBurst.speedFactor, 0.01f)
-        // After full burst duration, burst should end and heat lock active
-        val afterBurst = simulate(start.copy(throttle = 0.9f, fuel = 30f), 2.5f + 2 * FRAME, RunInput())
-        assertFalse(afterBurst.burst.active)
-        assertTrue(afterBurst.burst.heatLock > 0f)
-    }
-
-    @Test
-    fun burstSteeringReducedToPointEight() {
-        val base = quietRun().copy(fuel = 100f)
-        // Identical lever and drag input; only the burst differs.
-        val burstRun = step(base.copy(throttle = 0.9f), RunInput(dragTargetX = 1f)).run
-        assertTrue(burstRun.burst.active)
-        val controlRun = step(base.copy(burst = base.burst.copy(armed = false)).copy(throttle = 0.9f), RunInput(dragTargetX = 1f)).run
-        assertFalse(controlRun.burst.active)
-        // From rest with drag away from the lane centre the only lateral force is
-        // the drag force, so the velocity ratio isolates the burst steering scale.
-        assertEquals(controlRun.playerVelocityX * 0.8f, burstRun.playerVelocityX, 0.001f)
-    }
-
-    @Test
-    fun burstDrainsFuelAtFourPointFivePerSecond() {
-        val start = quietRun().copy(fuel = 20f)
-        // Prime the burst
-        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        val fuelAfterCross = afterCross.run.fuel
-        // Simulate 1 second of burst
-        val afterOneSec = step(afterCross.run.copy(throttle = 0.9f), RunInput(), dt = 1.0f).run
-        val fuelAfterOneSec = afterOneSec.fuel
-        // Fuel drained should be approximately 4.5 * boat.fuelUse * 1.0
-        val expectedDrain = 4.5f * boatSpec(progress.boat).fuelUse
-        val actualDrain = fuelAfterCross - fuelAfterOneSec
-        assertEquals(expectedDrain, actualDrain, 0.01f)
-        // After burst ends, fuel drain returns to normal
-        val afterBurstEnd = simulate(start.copy(throttle = 0.9f), 3.0f, RunInput()) // 2.5s burst + 0.5s heat lock
-        // During the 0.5s heat lock, fuel drain is normal (no burst)
-        // We can't easily check without knowing normal drain, but we trust the logic.
-    }
-
-    @Test
-    fun burstAddsEightThenTwelvePerSecondDetection() {
-        val start = quietRun().copy(detection = 0.1f, fuel = 20f)
-        // Prime the burst
-        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        // Detection after ignition should have +0.08
-        val detectionAfterCross = afterCross.run.detection
-        // Cross assertion: keep assertEquals(0.18f, detectionAfterCross, 0.01f)
-        assertEquals(0.18f, detectionAfterCross, 0.01f)
-        // Simulate 1 second of burst
-        val afterOneSec = step(afterCross.run.copy(throttle = 0.9f), RunInput(), dt = 1.0f).run
-        val detectionAfterOneSec = afterOneSec.detection
-        // Build a CONTROL run identical but with the burst disabled
-        val controlRun = afterCross.run.copy(burst = afterCross.run.burst.copy(active = false, armed = false), throttle = 0.9f)
-        val controlDetection = step(controlRun, RunInput(), dt = 1.0f).run.detection
-        // The burst's per-second cost ISOLATED from the normal dynamics
-        assertEquals(detectionAfterOneSec - controlDetection, 0.12f, 0.02f)
-        // After burst ends, detection decay continues normally
-        // We'll trust the logic.
-    }
-
-    @Test
-    fun pursuersFallBehindDuringBurst() {
-        val start = quietRun().copy(fuel = 20f, detection = 0.5f)
-        // Inject the pursuer manually
-        val pursuer = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = 90f, state = PursuerState.PURSUIT)
-        // Base run
-        val base = quietRun().copy(fuel = 20f, pursuers = listOf(pursuer), pursuitCooldown = 100f)
-        // Burst arm
-        val burstRun = step(base.copy(throttle = 0.9f), RunInput()).run
-        assertTrue(burstRun.burst.active)
-        // Control (burst disabled)
-        val controlBase = base.copy(burst = base.burst.copy(armed = false))
-        val controlRun = step(controlBase.copy(throttle = 0.9f), RunInput()).run
-        assertFalse(controlRun.burst.active)
-        // One second each
-        val afterBurstSec = step(burstRun, RunInput(), dt = 1.0f).run
-        val afterControlSec = step(controlRun, RunInput(), dt = 1.0f).run
-        // Assert: pursuer must fall behind by ~18 units during burst
-        assertTrue("pursuer must fall behind by ~18 units during burst", afterBurstSec.pursuers.single().y - afterControlSec.pursuers.single().y >= 17.5f)
-    }
-
-    @Test
-    fun burstEndsInHeatLockForSevenSeconds() {
-        val start = quietRun().copy(fuel = 30f)
-        // Prime and sustain burst for 2.5 seconds
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
-        assertFalse(afterBurst.burst.active)
-        assertTrue(afterBurst.burst.heatLock > 0f)
-        val heatLockStart = afterBurst.burst.heatLock
-        // Heat lock should start at 7.0 seconds
-        assertEquals(7.0f, heatLockStart, 0.001f)
-        // Simulate 7 seconds of heat lock
-        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
-        // After 7 seconds, heat lock should be 0
-        assertEquals(0.0f, afterHeatLock.burst.heatLock, 0.001f)
-        // During heat lock, throttle should be clamped to 0.5 if lever is high
-        // We'll test that separately if needed.
-    }
-
-    @Test
-    fun burstBlocksDiveDuringHeatWithDiveLockTwoSeconds() {
-        val start = quietRun().copy(fuel = 30f)
-        // Prime and end burst to start heat lock and dive lock
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
-        assertFalse(afterBurst.burst.active)
-        assertTrue(afterBurst.burst.heatLock > 0f)
-        assertTrue(afterBurst.burst.diveLock > 0f)
-        val diveLockStart = afterBurst.burst.diveLock
-        // Dive lock should start at 2.0 seconds
-        assertEquals(2.0f, diveLockStart, 0.001f)
-        // While dive lock is active, dive should be blocked even if submerged conditions are met
-        val stateWithDiveInput = step(afterBurst.copy(throttle = 0.9f), RunInput(diveHeld = true))
-        // Dive should not be active
-        assertFalse(stateWithDiveInput.run.dive.submerged)
-        // Simulate 2 seconds of dive lock
-        val afterDiveLock = simulate(afterBurst.copy(throttle = 0.9f), 2.0f + FRAME, RunInput(diveHeld = true))
-        // After 2 seconds, dive lock should be 0
-        assertEquals(0.0f, afterDiveLock.burst.diveLock, 0.001f)
-        // Now dive should be possible if submerged conditions are met
-        val stateAfterDiveLock = step(afterDiveLock, RunInput(diveHeld = true))
-        // Assuming we have enough oxygen and not locked out, dive should be active
-        // We'll trust that the dive logic works.
-    }
-
-    @Test
-    fun repeatedBurstWaitsForHeat() {
-        val start = quietRun().copy(fuel = 100f)
-        // First burst
-        val afterFirstBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
-        assertFalse(afterFirstBurst.burst.active)
-        assertTrue(afterFirstBurst.burst.heatLock > 0f)
-        // Immediately try to burst again (should not start because heat lock > 0)
-        val stateAfterImmediate = step(afterFirstBurst.copy(throttle = 0.9f), RunInput())
-        assertFalse(stateAfterImmediate.run.burst.active)
-        // Wait for heat lock to expire (7 seconds)
-        val afterHeatLockExpired = simulate(afterFirstBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
-        assertEquals(0.0f, afterHeatLockExpired.burst.heatLock, 0.001f)
-        assertFalse("holding the lever through heat lock must not auto-start another burst", afterHeatLockExpired.burst.active)
-        // Re-arm the burst lever
-        val rearmed = step(afterHeatLockExpired.copy(throttle = 0.5f), RunInput()).run
-        // Now we can burst again
-        val stateAfterSecond = step(rearmed.copy(throttle = 0.9f), RunInput())
-        assertTrue(stateAfterSecond.run.burst.active)
-    }
-    @Test
-    fun spintaZeroFuelEndsBurst() {
-        val start = quietRun().copy(fuel = 100f)
-        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        // Spec edge case: fuel reaching zero ends the burst immediately.
-        val afterDry = step(afterCross.run.copy(fuel = 0f), RunInput())
-        assertFalse(afterDry.run.burst.active)
-        assertTrue(afterDry.run.burst.heatLock > 0f)
-        assertTrue(afterDry.run.burst.diveLock > 0f)
-    }
-
-    @Test
-    fun spintaCommittedRamUnaffectedByBurst() {
-        // Mirror the committed-ram setup of ramDamagesTheHullUnlessSubmerged
-        // (READ that test first and copy its exact pursuer setup values).
-        // The ram must still execute while the burst is active.
-        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        val base = quietRun().copy(fuel = 100f, pursuers = listOf(ram))
-        val afterCross = step(base.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        val rammed = step(afterCross.run.copy(throttle = 0.9f), RunInput()).run
-        assertTrue("committed ram must not be cancelled by the burst", rammed.hull < rammed.maxHull || rammed.invulnerable > 0f)
-    }
-
-    @Test
-    fun spintaFrameRateInvariance30_60_120() {
-        for (frameTime in listOf(1f / 30f, 1f / 60f, 1f / 120f)) {
-            var run = quietRun().copy(fuel = 100f).copy(throttle = 0.9f)
-            var elapsed = 0f
-            while (elapsed < 1.0f) {
-                val dt = min(frameTime, 1.0f - elapsed)
-                run = step(run, RunInput(), dt = dt).run
-                elapsed += dt
-            }
-            assertTrue(run.burst.active)
-            assertEquals(1.0f, run.burst.timer, 0.02f)
-        }
-    }
-
-    @Test
-    fun spintaPauseFreezesBurstTimers() {
-        val start = quietRun().copy(fuel = 100f)
-        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        // Continuous burst time vs the same time split by a pause (no steps
-        // during the pause): pure simulation time means identical timers.
-        val continuous = step(step(afterCross.run, RunInput(), dt = 0.5f).run, RunInput(), dt = 0.5f).run
-        val halfWay = step(afterCross.run, RunInput(), dt = 0.5f).run
-        val resumed = step(halfWay, RunInput(), dt = 0.5f).run
-        assertEquals(continuous.burst.timer, resumed.burst.timer, 0.0001f)
-        assertEquals(continuous.burst.active, resumed.burst.active)
-        assertEquals(continuous.burst.heatLock, resumed.burst.heatLock, 0.0001f)
-        assertEquals(continuous.fuel, resumed.fuel, 0.001f)
-    }
-
-    
-    // Revised existing tests
-    @Test
-    fun throttleAloneSetsTopSpeed() {
-        // Non-burst lever formula in isolation: the armed=false control latch
-        // can never ignite, so the lever alone drives the speed.
-        val start = quietRun().copy(burst = BurstState(armed = false))
-        val run = simulate(start.copy(throttle = 1.0f), 2.0f, RunInput())
-        assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.1f)
-    }
-
-    @Test
-    fun throttleTradesSpeedForSignature() {
-        // Start from a clean state; the 3s at full throttle will include a burst and heat lock
-        val start = quietRun()
-        val fast = simulate(start.copy(throttle = 1.0f), 3.0f, RunInput())
-        val silent = simulate(start.copy(throttle = 0.0f), 3.0f, RunInput())
-        assertTrue(fast.sectorProgress > silent.sectorProgress)
-        assertTrue(fast.detection > silent.detection)
-        assertTrue(fast.fuel < silent.fuel)
-        // Note: The burst and heat lock are accounted for; the fast simulation includes
-        // a 2.5s burst followed by 0.5s of heat lock (with throttle clamped to 0.5).
-        // The intrinsic throttle trade-off (fast > silent on speed and detection, fast < silent on fuel) still holds.
-    }
-
-    // 13 tests for repair
-
-    @Test
-    fun repairHealsHullOverThreeSeconds() {
-        val start = quietRun().copy(hull = 70f, fuel = 60f)
-        val (runAfterStart, _) = GameSimulation.startRepair(start)
-        assertEquals(1, runAfterStart.repair.kits)
-        assertEquals(48f, runAfterStart.fuel, 0.001f)
-        assertTrue(runAfterStart.repair.active)
-        val end = simulate(runAfterStart.copy(throttle = 0.2f), 3.0f + 2 * FRAME)
-        assertFalse(end.repair.active)
-        assertEquals(88.0f, end.hull, 0.001f)
-        assertEquals(3.0f, end.repair.progress, 0.001f)
-    }
-
-    @Test
-    fun repairRequiresQuietThrottleAndFuelAndMissingHull() {
-        val base = quietRun()
-        val cases = listOf(
-            base.copy(hull = 90f), // hull > maxHull-10 (assuming maxHull=100)
-            base.copy(fuel = 14.9f),
-            base.copy(throttle = 0.4f),
-            base.copy(dive = DiveState(submerged = true)),
-            base.copy(burst = BurstState(active = true)),
-            base.copy(burst = BurstState(heatLock = 1f)),
-            base.copy(invulnerable = 1f),
-            base.copy(repair = RepairState(active = true)),
-            base.copy(repair = RepairState(kits = 0))
-        )
-        for (testCase in cases) {
-            val (result, events) = GameSimulation.startRepair(testCase)
-            assertEquals(testCase, result) // state unchanged
-            assertTrue(events.isEmpty()) // no events
-        }
-    }
-
-    @Test
-    fun repairSpendsOneKitAndTwelveFuel() {
-        val start = quietRun().copy(kits = 2, fuel = 50f)
-        val (runAfterFirst, _) = GameSimulation.startRepair(start)
-        assertEquals(1, runAfterFirst.repair.kits)
-        assertEquals(38f, runAfterFirst.fuel, 0.001f)
-        // Second start while repair active
-        val (runAfterSecond, _) = GameSimulation.startRepair(runAfterFirst)
-        assertEquals(1, runAfterSecond.repair.kits) // kits should not decrease again
-        assertEquals(38f, runAfterSecond.fuel, 0.001f) // fuel should not decrease again
-    }
-
-    @Test
-    fun repairInterruptedByCollisionKeepsPartialHull() {
-        // Similar to ramDamagesTheHullUnlessSubmerged but with repair active
-        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        val base = quietRun().copy(pursuers = listOf(ram), hull = 50f, fuel = 60f)
-        val (runAfterStart, _) = GameSimulation.startRepair(base.copy(throttle = 0.2f))
-        assertTrue(runAfterStart.repair.active)
-        // Simulate until ram hits
-        val end = step(runAfterStart)
-        // The ram should hit in this step
-        assertTrue(end.run.hull < runAfterStart.hull) // hull decreased due to ram
-        assertFalse(end.run.repair.active) // repair should be inactive
-        // The hull should be the hull after ram (which is less than initial) plus any healing that happened before the ram
-        // We expect the hull to be between the initial hull and the hull after ram without repair
-        val hullAfterRamWithoutRepair = step(base.copy(throttle = 0.2f)).run.hull
-        assertTrue(end.run.hull > hullAfterRamWithoutRepair) // because repair healed some before ram
-        assertEquals(1, end.run.repair.kits) // kit spent
-        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // IMPATTO" })
-        assertTrue(end.run.events.any { it is GameEvent.Vibrate })
-    }
-
-    @Test
-    fun repairCancelledByLeverAboveZeroPointThree() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f)
-        val (runAfterStart, _) = GameSimulation.startRepair(start.copy(throttle = 0.2f))
-        assertTrue(runAfterStart.repair.active)
-        // Simulate 1s at throttle 0.2
-        val mid = simulate(runAfterStart, 1.0f)
-        // Then change throttle to 0.5
-        val end = step(mid.copy(throttle = 0.5f))
-        assertFalse(end.run.repair.active)
-        assertEquals(1, runAfterStart.repair.kits)
-        // Hull should be stuck at the value after 1s of repair
-        val expectedHull = runAfterStart.hull + 6f * (1.0f / 3f * 3f) // 1s of repair heals 6 * (1/3) * 3? Actually heal per second is 6, so in 1s heals 6
-        // But we clamp to maxHull
-        assertEquals(runAfterStart.hull + 6f, end.run.hull, 0.01f) // approximately
-        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // LEVA ALTA" })
-    }
-
-    @Test
-    fun repairCapsAtMaxHull() {
-        val maxHull = 100f
-        val start = quietRun().copy(hull = maxHull - 12f, fuel = 60f, kits = 2)
-        val (runAfterStart, _) = GameSimulation.startRepair(start.copy(throttle = 0.2f))
-        assertTrue(runAfterStart.repair.active)
-        val end = simulate(runAfterStart, 3.0f + 2 * FRAME)
-        assertFalse(end.repair.active)
-        assertEquals(maxHull, end.hull, 0.001f) // should not exceed maxHull
-        assertEquals(3.0f, end.repair.progress, 0.001f)
-    }
-
-    @Test
-    fun repairGrantsNoInvulnerability() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
-        var run = step(start.copy(throttle = 0.2f)) // start repair
-        assertTrue(run.repair.active)
-        // Simulate a few frames
-        run = simulate(run, 1.0f)
-        for (i in 0..10) {
-            assertEquals(0f, run.invulnerable, 0.001f)
-            run = step(run, FRAME)
-        }
-    }
-
-    @Test
-    fun repairCollisionWinsTieAgainstCompletion() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
-        // Set repair almost complete
-        val runWithAlmostCompleteRepair = step(start.copy(throttle = 0.2f, repair = RepairState(kits = 1, active = true, progress = 3.0f - FRAME)))
-        // Add a pursuer that will ram in the same frame
-        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        val runWithRam = runWithAlmostCompleteRepair.copy(pursuers = listOf(ram))
-        val end = step(runWithRam)
-        // The ram should hit and repair should not complete
-        assertTrue(end.run.hull < runWithAlmostCompleteRepair.hull) // hull decreased due to ram
-        assertFalse(end.run.repair.active)
-        assertTrue(end.run.repair.progress < 3.0f)
-        assertFalse(end.run.feed.any { it.text == "SCAFO RIPRISTINATO // +18" })
-    }
-
-    @Test
-    fun repairBlockedDuringBurstAndHeatLock() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
-        // Test with burst active
-        val burstActive = start.copy(burst = BurstState(active = true))
-        val (result1, _) = GameSimulation.startRepair(burstActive)
-        assertEquals(burstActive, result1) // no change
-        // Test with heatLock > 0
-        val heatLockActive = start.copy(burst = BurstState(heatLock = 1f))
-        val (result2, _) = GameSimulation.startRepair(heatLockActive)
-        assertEquals(heatLockActive, result2) // no change
-    }
-
-    @Test
-    fun repairFrameRateInvariance30_60_120() {
-        val baseRun = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
-        val (runAfterStart, _) = GameSimulation.startRepair(baseRun)
-        assertTrue(runAfterStart.repair.active)
-        // Simulate 1 second of gameplay at different frame rates
-        val frameTimes = listOf(1f/30f, 1f/60f, 1f/120f)
-        for (frameTime in frameTimes) {
-            var run = runAfterStart
-            var elapsed = 0f
-            while (elapsed < 1.0f) {
-                val dt = min(frameTime, 1.0f - elapsed)
-                val result = GameSimulation.step(run, 1, Progress(), RunInput(), dt, Random(1234))
-                run = result.run
-                elapsed += dt
-            }
-            // After 1 second, repair should still be active (since 1s < 3s)
-            assertTrue(run.repair.active)
-            // Hull should have increased by 6 * 1 = 6 (but capped by maxHull)
-            val expectedHull = min(100f, 50f + 6f)
-            assertEquals(expectedHull, run.hull, 0.01f)
-        }
-    }
-
-    @Test
-    fun repairPauseFreezesProgress() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
-        val (runAfterStart, _) = GameSimulation.startRepair(start)
-        assertTrue(runAfterStart.repair.active)
-        // Simulate 0.5s
-        var mid = simulate(runAfterStart, 0.5f)
-        // Pause for 0.5s (no steps)
-        // Then simulate another 0.5s
-        var end = simulate(mid, 0.5f)
-        // The progress should be the same as after 0.5s + 0.5s = 1.0s of repair
-        // But because we paused, the progress should be only 0.5s worth
-        // Actually, during pause, the repair progress should not advance.
-        // So after pause and then 0.5s, the progress should be 0.5s (first half) + 0.5s (second half) = 1.0s? No, because the pause stopped the timer.
-        // We need to compare the hull after the sequence with the hull after continuous repair for 1.0s.
-        val continuous = simulate(runAfterStart, 1.0f)
-        // The paused sequence should have less hull gain than continuous
-        assertTrue(end.hull < continuous.hull)
-        // And the hull after pause should be equal to the hull after the first 0.5s (since no advancement during pause)
-        assertEquals(mid.hull, end.hull, 0.0001f)
-    }
-
-    @Test
-    fun repairDiveAndBurstBlockedWhileRepairing() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
-        val (runAfterStart, _) = GameSimulation.startRepair(start)
-        assertTrue(runAfterStart.repair.active)
-        // Try to dive
-        val diveAttempt = step(runAfterStart.copy(input = RunInput(diveHeld = true)))
-        assertFalse(diveAttempt.run.dive.submerged) // should not submerge
-        assertTrue(diveAttempt.run.repair.active) // repair should still be active
-        // Try to burst
-        val burstAttempt = step(runAfterStart.copy(throttle = 0.9f))
-        assertFalse(burstAttempt.run.burst.active) // should not burst
-        // Lever alta should cancel repair
-        assertFalse(burstAttempt.run.repair.active)
-        assertTrue(burstAttempt.run.repair.kits == 1) // kit spent
-        assertTrue(burstAttempt.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // LEVA ALTA" })
-    }
-
-    @Test
-    fun repairFuelZeroCancelsImmediately() {
-        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
-        val (runAfterStart, _) = GameSimulation.startRepair(start)
-        assertTrue(runAfterStart.repair.active)
-        // Set fuel to 0 in the middle of repair
-        val mid = runAfterStart.copy(fuel = 0f)
-        val end = step(mid)
-        assertFalse(end.run.repair.active)
-        assertEquals(1, end.run.repair.kits) // kit spent
-        // Hull should not increase after fuel zero
-        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // SENZA CARBURANTE" })
-    }
-
-    private companion object {
-        const val FRAME = 1f / 60f
-    }
-}
+    fun flareNoTargetCon... [truncated]

@@ -712,7 +712,7 @@ object GameSimulation {
         val hasFuelNow = fuel > 0f
         val hullLost = hull < prev.hull
         var newRepair = prev.repair
-        var newKits = prev.repair.kits
+        val newKits = prev.repair.kits
         var newActive = prev.repair.active
         var newProgress = prev.repair.progress
         if (prev.repair.active) {
@@ -753,8 +753,6 @@ object GameSimulation {
                     val detectionIncrease = 0.06f * dt
                     detection = (detection + detectionIncrease).coerceIn(0f, 1f)
                 }
-                // Consume one kit
-                newKits = prev.repair.kits - 1
             }
         }
         // Update repair state for the RunState copy

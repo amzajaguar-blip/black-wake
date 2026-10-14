@@ -137,6 +137,12 @@ data class BurstState(
     val armed: Boolean = true
 )
 
+data class RepairState(
+    val kits: Int = 2,
+    val active: Boolean = false,
+    val progress: Float = 0f
+)
+
 /** Everything that belongs to a single mission. A new run always starts from a fresh instance. */
 data class RunState(
     val sectorIndex: Int = 0,
@@ -168,6 +174,7 @@ data class RunState(
     val sonar: SonarState = SonarState(),
     val flare: FlareState = FlareState(),
     val burst: BurstState = BurstState(),
+    val repair: RepairState = RepairState(),
 
     val comboCounter: Int = 0,
     val comboMultiplier: Int = 1,

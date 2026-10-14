@@ -136,7 +136,7 @@ object GameSimulation {
             val sonarCooldown = sonarCooldownSeconds(modules)
             val pingOriginX = run.playerX
             val pingOriginZ = 0f // player is at z=0
-            
+
             // Snapshot entities within range
             val contactedEntities = run.entities.filter { entity ->
                 val dx = entity.x - pingOriginX
@@ -152,7 +152,7 @@ object GameSimulation {
                     z = entity.z
                 )
             }
-            
+
             // Snapshot pursuers within range
             val contactedPursuers = run.pursuers.filter { pursuer ->
                 val pursuerZ = (PLAYER_Y - pursuer.y) / 0.85f
@@ -171,7 +171,7 @@ object GameSimulation {
                     z = pursuerZ
                 )
             }
-            
+
             val nextSonar = SonarState(
                 cooldown = sonarCooldown,
                 active = true,
@@ -184,7 +184,7 @@ object GameSimulation {
                 pingStartTime = run.runElapsed,
                 initialCooldown = sonarCooldown
             )
-            
+
             val nextRun = run.copy(sonar = nextSonar)
             val events = mutableListOf<GameEvent>()
             events += GameEvent.Tone(1320f, 0.22f, 0.3f) // sonar ping sound
@@ -196,6 +196,41 @@ object GameSimulation {
             return withMessages(updatedRun, emptyList()) to events
         }
         return run to emptyList()
+    }
+
+    fun startRepair(run: RunState): Pair<RunState, List<GameEvent>> {
+        val repair = run.repair
+        val burst = run.burst
+        val dive = run.dive
+        // Guards: emerso, hull ≤ maxHull−10, fuel ≥ 15, throttle ≤ 0.3, !burst.active, burst.heatLock ≤ 0, invulnerable ≤ 0, !repair.active, kits ≥ 1
+        if (!run.dive.submerged ||
+            run.hull > run.maxHull - 10f ||
+            run.fuel < 15f ||
+            run.throttle > 0.3f ||
+            burst.active ||
+            burst.heatLock > 0f ||
+            run.invulnerable > 0f ||
+            repair.active ||
+            repair.kits < 1) {
+            return run to emptyList()
+        }
+        val newFuel = (run.fuel - 12f).coerceAtLeast(0f)
+        val newRepair = RepairState(
+            kits = repair.kits - 1,
+            active = true,
+            progress = 0f
+        )
+        val message = "RIPARAZIONE AVVIATA // 3s"
+        val updatedRun = run.copy(
+            fuel = newFuel,
+            repair = newRepair,
+            // Append message to feed
+            feed = (listOf(TerminalMessage(message, MessageTone.INFO, run.runElapsed)) + run.feed).take(MAX_FEED)
+        )
+        val events = mutableListOf<GameEvent>()
+        // Choose a start tone: 880f, 0.2f, 0.35f (similar to intel pickup)
+        events += GameEvent.Tone(880f, 0.2f, 0.35f)
+        return updatedRun to events
     }
 
     fun step(prev: RunState, chapterIndex: Int, progress: Progress, input: RunInput, dt: Float, rng: Random): StepResult {
@@ -307,7 +342,17 @@ object GameSimulation {
         val normalSpeed = (0.8f + throttle * 0.4f) * boat.speed
         val heatClampedThrottle = if (newBurst.heatLock > 0f) min(throttle, 0.5f) else throttle
         val heatClampedSpeed = (0.8f + heatClampedThrottle * 0.4f) * boat.speed
-        val targetSpeed = if (newBurst.active) 1.70f * boat.speed else heatClampedSpeed
+        // Repair active overrides speed to use effective throttle 0.2f
+        val effectiveThrottle = when {
+            prev.repair.active -> 0.2f
+            newBurst.heatLock > 0f -> min(throttle, 0.5f)
+            else -> throttle
+        }
+        val targetSpeed = when {
+            newBurst.active -> 1.70f * boat.speed
+            prev.repair.active -> (0.8f + effectiveThrottle * 0.4f) * boat.speed
+            else -> heatClampedSpeed
+        }
         val speedFactor = if (burstStartedThisFrame) targetSpeed else prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
 
         // --- Sonar
@@ -663,6 +708,58 @@ object GameSimulation {
         if (forkTaken) entities.removeAll { it.type == EntityType.FORK }
         if (forkNotice != null && elapsed > forkNotice.expiresAt) forkNotice = null
 
+        // --- Repair logic (after burst and after collisions/ram)
+        val hasFuelNow = fuel > 0f
+        val hullLost = hull < prev.hull
+        var newRepair = prev.repair
+        var newKits = prev.repair.kits
+        var newActive = prev.repair.active
+        var newProgress = prev.repair.progress
+        if (prev.repair.active) {
+            if (hullLost) {
+                // Interrupted by impact
+                newActive = false
+                val message = "RIPARAZIONE INTERROTTA // IMPATTO"
+                said += message to MessageTone.WARNING
+                events += GameEvent.Vibrate(listOf(0, 100, 50, 150, 50, 200))
+            } else if (prev.throttle > 0.3f) {
+                // Lever alta
+                newActive = false
+                val message = "RIPARAZIONE INTERROTTA // LEVA ALTA"
+                said += message to MessageTone.WARNING
+                // No haptic
+            } else if (!hasFuelNow) {
+                // Senza carburante
+                newActive = false
+                val message = "RIPARAZIONE INTERROTTA // SENZA CARBURANTE"
+                said += message to MessageTone.WARNING
+                // No haptic
+            } else {
+                // Advance progress
+                val clampedProgress = min(3f, newProgress + dt)
+                val heal = 6f * (clampedProgress - newProgress)
+                // Heal the current hull (after collisions/ram)
+                hull = min(prev.maxHull, hull + heal)
+                newProgress = clampedProgress
+                if (newProgress >= 3f) {
+                    // Completed
+                    newActive = false
+                    newProgress = 3f
+                    val message = "SCAFO RIPRISTINATO // +18"
+                    said += message to MessageTone.INFO
+                    events += GameEvent.Tone(880f, 0.3f, 0.4f) // completion tone
+                } else {
+                    // Still repairing: increase detection
+                    val detectionIncrease = 0.06f * dt
+                    detection = (detection + detectionIncrease).coerceIn(0f, 1f)
+                }
+                // Consume one kit
+                newKits = prev.repair.kits - 1
+            }
+        }
+        // Update repair state for the RunState copy
+        newRepair = RepairState(newKits, newActive, newProgress)
+
         var fuelOutNotified = prev.fuelOutNotified
         if (fuel <= 0f && !fuelOutNotified) {
             fuelOutNotified = true
@@ -735,6 +832,7 @@ object GameSimulation {
             sonar = sonar,
             flare = prev.flare.copy(timer = max(0f, prev.flare.timer - dt), markerTimer = max(0f, prev.flare.markerTimer - dt)),
             burst = newBurst,
+            repair = newRepair,
             comboCounter = combo,
             comboMultiplier = comboMultiplier,
             cameraShake = cameraShake,

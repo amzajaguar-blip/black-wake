@@ -140,6 +140,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchFlare() = updateRun(GameSimulation::launchFlare)
     fun launchSonar() = updateRun(GameSimulation::launchSonar)
+    fun startRepair() = updateRun(GameSimulation::startRepair)
 
     // --- Garage and settings
 

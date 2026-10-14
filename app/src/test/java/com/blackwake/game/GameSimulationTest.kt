@@ -996,7 +996,228 @@ class GameSimulationTest {
         // Note: The burst and heat lock are accounted for; the fast simulation includes
         // a 2.5s burst followed by 0.5s of heat lock (with throttle clamped to 0.5).
         // The intrinsic throttle trade-off (fast > silent on speed and detection, fast < silent on fuel) still holds.
-    }    private companion object {
+    }
+
+    // 13 tests for repair
+
+    @Test
+    fun repairHealsHullOverThreeSeconds() {
+        val start = quietRun().copy(hull = 70f, fuel = 60f)
+        val (runAfterStart, _) = GameSimulation.startRepair(start)
+        assertEquals(1, runAfterStart.repair.kits)
+        assertEquals(48f, runAfterStart.fuel, 0.001f)
+        assertTrue(runAfterStart.repair.active)
+        val end = simulate(runAfterStart.copy(throttle = 0.2f), 3.0f + 2 * FRAME)
+        assertFalse(end.repair.active)
+        assertEquals(88.0f, end.hull, 0.001f)
+        assertEquals(3.0f, end.repair.progress, 0.001f)
+    }
+
+    @Test
+    fun repairRequiresQuietThrottleAndFuelAndMissingHull() {
+        val base = quietRun()
+        val cases = listOf(
+            base.copy(hull = 90f), // hull > maxHull-10 (assuming maxHull=100)
+            base.copy(fuel = 14.9f),
+            base.copy(throttle = 0.4f),
+            base.copy(dive = DiveState(submerged = true)),
+            base.copy(burst = BurstState(active = true)),
+            base.copy(burst = BurstState(heatLock = 1f)),
+            base.copy(invulnerable = 1f),
+            base.copy(repair = RepairState(active = true)),
+            base.copy(repair = RepairState(kits = 0))
+        )
+        for (testCase in cases) {
+            val (result, events) = GameSimulation.startRepair(testCase)
+            assertEquals(testCase, result) // state unchanged
+            assertTrue(events.isEmpty()) // no events
+        }
+    }
+
+    @Test
+    fun repairSpendsOneKitAndTwelveFuel() {
+        val start = quietRun().copy(kits = 2, fuel = 50f)
+        val (runAfterFirst, _) = GameSimulation.startRepair(start)
+        assertEquals(1, runAfterFirst.repair.kits)
+        assertEquals(38f, runAfterFirst.fuel, 0.001f)
+        // Second start while repair active
+        val (runAfterSecond, _) = GameSimulation.startRepair(runAfterFirst)
+        assertEquals(1, runAfterSecond.repair.kits) // kits should not decrease again
+        assertEquals(38f, runAfterSecond.fuel, 0.001f) // fuel should not decrease again
+    }
+
+    @Test
+    fun repairInterruptedByCollisionKeepsPartialHull() {
+        // Similar to ramDamagesTheHullUnlessSubmerged but with repair active
+        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
+        val base = quietRun().copy(pursuers = listOf(ram), hull = 50f, fuel = 60f)
+        val (runAfterStart, _) = GameSimulation.startRepair(base.copy(throttle = 0.2f))
+        assertTrue(runAfterStart.repair.active)
+        // Simulate until ram hits
+        val end = step(runAfterStart)
+        // The ram should hit in this step
+        assertTrue(end.run.hull < runAfterStart.hull) // hull decreased due to ram
+        assertFalse(end.run.repair.active) // repair should be inactive
+        // The hull should be the hull after ram (which is less than initial) plus any healing that happened before the ram
+        // We expect the hull to be between the initial hull and the hull after ram without repair
+        val hullAfterRamWithoutRepair = step(base.copy(throttle = 0.2f)).run.hull
+        assertTrue(end.run.hull > hullAfterRamWithoutRepair) // because repair healed some before ram
+        assertEquals(1, end.run.repair.kits) // kit spent
+        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // IMPATTO" })
+        assertTrue(end.run.events.any { it is GameEvent.Vibrate })
+    }
+
+    @Test
+    fun repairCancelledByLeverAboveZeroPointThree() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f)
+        val (runAfterStart, _) = GameSimulation.startRepair(start.copy(throttle = 0.2f))
+        assertTrue(runAfterStart.repair.active)
+        // Simulate 1s at throttle 0.2
+        val mid = simulate(runAfterStart, 1.0f)
+        // Then change throttle to 0.5
+        val end = step(mid.copy(throttle = 0.5f))
+        assertFalse(end.run.repair.active)
+        assertEquals(1, runAfterStart.repair.kits)
+        // Hull should be stuck at the value after 1s of repair
+        val expectedHull = runAfterStart.hull + 6f * (1.0f / 3f * 3f) // 1s of repair heals 6 * (1/3) * 3? Actually heal per second is 6, so in 1s heals 6
+        // But we clamp to maxHull
+        assertEquals(runAfterStart.hull + 6f, end.run.hull, 0.01f) // approximately
+        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // LEVA ALTA" })
+    }
+
+    @Test
+    fun repairCapsAtMaxHull() {
+        val maxHull = 100f
+        val start = quietRun().copy(hull = maxHull - 12f, fuel = 60f, kits = 2)
+        val (runAfterStart, _) = GameSimulation.startRepair(start.copy(throttle = 0.2f))
+        assertTrue(runAfterStart.repair.active)
+        val end = simulate(runAfterStart, 3.0f + 2 * FRAME)
+        assertFalse(end.repair.active)
+        assertEquals(maxHull, end.hull, 0.001f) // should not exceed maxHull
+        assertEquals(3.0f, end.repair.progress, 0.001f)
+    }
+
+    @Test
+    fun repairGrantsNoInvulnerability() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
+        var run = step(start.copy(throttle = 0.2f)) // start repair
+        assertTrue(run.repair.active)
+        // Simulate a few frames
+        run = simulate(run, 1.0f)
+        for (i in 0..10) {
+            assertEquals(0f, run.invulnerable, 0.001f)
+            run = step(run, FRAME)
+        }
+    }
+
+    @Test
+    fun repairCollisionWinsTieAgainstCompletion() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
+        // Set repair almost complete
+        val runWithAlmostCompleteRepair = step(start.copy(throttle = 0.2f, repair = RepairState(kits = 1, active = true, progress = 3.0f - FRAME)))
+        // Add a pursuer that will ram in the same frame
+        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
+        val runWithRam = runWithAlmostCompleteRepair.copy(pursuers = listOf(ram))
+        val end = step(runWithRam)
+        // The ram should hit and repair should not complete
+        assertTrue(end.run.hull < runWithAlmostCompleteRepair.hull) // hull decreased due to ram
+        assertFalse(end.run.repair.active)
+        assertTrue(end.run.repair.progress < 3.0f)
+        assertFalse(end.run.feed.any { it.text == "SCAFO RIPRISTINATO // +18" })
+    }
+
+    @Test
+    fun repairBlockedDuringBurstAndHeatLock() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2)
+        // Test with burst active
+        val burstActive = start.copy(burst = BurstState(active = true))
+        val (result1, _) = GameSimulation.startRepair(burstActive)
+        assertEquals(burstActive, result1) // no change
+        // Test with heatLock > 0
+        val heatLockActive = start.copy(burst = BurstState(heatLock = 1f))
+        val (result2, _) = GameSimulation.startRepair(heatLockActive)
+        assertEquals(heatLockActive, result2) // no change
+    }
+
+    @Test
+    fun repairFrameRateInvariance30_60_120() {
+        val baseRun = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
+        val (runAfterStart, _) = GameSimulation.startRepair(baseRun)
+        assertTrue(runAfterStart.repair.active)
+        // Simulate 1 second of gameplay at different frame rates
+        val frameTimes = listOf(1f/30f, 1f/60f, 1f/120f)
+        for (frameTime in frameTimes) {
+            var run = runAfterStart
+            var elapsed = 0f
+            while (elapsed < 1.0f) {
+                val dt = min(frameTime, 1.0f - elapsed)
+                val result = GameSimulation.step(run, 1, Progress(), RunInput(), dt, Random(1234))
+                run = result.run
+                elapsed += dt
+            }
+            // After 1 second, repair should still be active (since 1s < 3s)
+            assertTrue(run.repair.active)
+            // Hull should have increased by 6 * 1 = 6 (but capped by maxHull)
+            val expectedHull = min(100f, 50f + 6f)
+            assertEquals(expectedHull, run.hull, 0.01f)
+        }
+    }
+
+    @Test
+    fun repairPauseFreezesProgress() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
+        val (runAfterStart, _) = GameSimulation.startRepair(start)
+        assertTrue(runAfterStart.repair.active)
+        // Simulate 0.5s
+        var mid = simulate(runAfterStart, 0.5f)
+        // Pause for 0.5s (no steps)
+        // Then simulate another 0.5s
+        var end = simulate(mid, 0.5f)
+        // The progress should be the same as after 0.5s + 0.5s = 1.0s of repair
+        // But because we paused, the progress should be only 0.5s worth
+        // Actually, during pause, the repair progress should not advance.
+        // So after pause and then 0.5s, the progress should be 0.5s (first half) + 0.5s (second half) = 1.0s? No, because the pause stopped the timer.
+        // We need to compare the hull after the sequence with the hull after continuous repair for 1.0s.
+        val continuous = simulate(runAfterStart, 1.0f)
+        // The paused sequence should have less hull gain than continuous
+        assertTrue(end.hull < continuous.hull)
+        // And the hull after pause should be equal to the hull after the first 0.5s (since no advancement during pause)
+        assertEquals(mid.hull, end.hull, 0.0001f)
+    }
+
+    @Test
+    fun repairDiveAndBurstBlockedWhileRepairing() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
+        val (runAfterStart, _) = GameSimulation.startRepair(start)
+        assertTrue(runAfterStart.repair.active)
+        // Try to dive
+        val diveAttempt = step(runAfterStart.copy(input = RunInput(diveHeld = true)))
+        assertFalse(diveAttempt.run.dive.submerged) // should not submerge
+        assertTrue(diveAttempt.run.repair.active) // repair should still be active
+        // Try to burst
+        val burstAttempt = step(runAfterStart.copy(throttle = 0.9f))
+        assertFalse(burstAttempt.run.burst.active) // should not burst
+        // Lever alta should cancel repair
+        assertFalse(burstAttempt.run.repair.active)
+        assertTrue(burstAttempt.run.repair.kits == 1) // kit spent
+        assertTrue(burstAttempt.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // LEVA ALTA" })
+    }
+
+    @Test
+    fun repairFuelZeroCancelsImmediately() {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, kits = 2, throttle = 0.2f)
+        val (runAfterStart, _) = GameSimulation.startRepair(start)
+        assertTrue(runAfterStart.repair.active)
+        // Set fuel to 0 in the middle of repair
+        val mid = runAfterStart.copy(fuel = 0f)
+        val end = step(mid)
+        assertFalse(end.run.repair.active)
+        assertEquals(1, end.run.repair.kits) // kit spent
+        // Hull should not increase after fuel zero
+        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // SENZA CARBURANTE" })
+    }
+
+    private companion object {
         const val FRAME = 1f / 60f
     }
 }

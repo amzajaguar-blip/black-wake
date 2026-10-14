@@ -275,6 +275,19 @@ private fun ActionPad(run: RunState, viewModel: GameViewModel, modifier: Modifie
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val repair = run.repair
+            val hasFuelNow = repair.kits > 0 && run.fuel >= 15f && run.throttle <= 0.3f && run.hull <= run.maxHull - 10f && !run.burst.active && run.burst.heatLock <= 0f && run.invulnerable <= 0f && !repair.active && !run.dive.submerged
+            ActionButton(
+                title = "RIPARA",
+                detail = " x${repair.kits}",
+                color = Palette.Green,
+                enabled = hasFuelNow,
+                active = repair.active,
+                fraction = when { repair.active -> repair.progress / 3f; else -> null },
+                onClick = viewModel::startRepair
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sonar = run.sonar
             val isReady = !sonar.active && sonar.cooldown <= 0f
             ActionButton(

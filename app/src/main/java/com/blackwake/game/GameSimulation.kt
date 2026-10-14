@@ -277,7 +277,7 @@ object GameSimulation {
         }
 
         // Fire (single burst): when armed, lever high, not submerged, heat lock ready, enough fuel, and not already active
-        if (newBurst.armed && throttle > 0.8f && !currentlySubmerged && newBurst.heatLock <= 0f && prev.fuel >= 12f && !newBurst.active) {
+        if (newBurst.armed && throttle > 0.8f && !currentlySubmerged && newBurst.heatLock <= 0f && prev.fuel >= 12f && !newBurst.active && !prev.repair.active) {
             newBurst = newBurst.copy(
                 active = true,
                 timer = 0f,
@@ -327,7 +327,7 @@ object GameSimulation {
 
         // --- Dive
         val prevDive = prev.dive
-        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f)) && newBurst.diveLock <= 0f
+        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f)) && newBurst.diveLock <= 0f && !prev.repair.active
         val wantsDive = input.diveHeld && canDive
         val oxygen = if (wantsDive) max(0f, prevDive.oxygen - dt * 25f)
         else min(100f, prevDive.oxygen + dt * 15f)
@@ -716,7 +716,13 @@ object GameSimulation {
         var newActive = prev.repair.active
         var newProgress = prev.repair.progress
         if (prev.repair.active) {
-            if (hullLost) {
+            if (!hasFuelNow) {
+                // Senza carburante
+                newActive = false
+                val message = "RIPARAZIONE INTERROTTA // SENZA CARBURANTE"
+                said += message to MessageTone.WARNING
+                // No haptic
+            } else if (hullLost) {
                 // Interrupted by impact
                 newActive = false
                 val message = "RIPARAZIONE INTERROTTA // IMPATTO"
@@ -726,12 +732,6 @@ object GameSimulation {
                 // Lever alta
                 newActive = false
                 val message = "RIPARAZIONE INTERROTTA // LEVA ALTA"
-                said += message to MessageTone.WARNING
-                // No haptic
-            } else if (!hasFuelNow) {
-                // Senza carburante
-                newActive = false
-                val message = "RIPARAZIONE INTERROTTA // SENZA CARBURANTE"
                 said += message to MessageTone.WARNING
                 // No haptic
             } else {

@@ -22,7 +22,7 @@ class SoakTest {
         fun choose(run: RunState): Decision {
             val currentLane = round(run.playerX).toInt().coerceIn(-1, 1) + 1
             val diveAvailable = !run.dive.lockedOut &&
-                (run.dive.oxygen >= 15f || (run.dive.submerged && run.dive.oxygen > 0f))
+                (run.dive.oxygen >= 15f || (run.dive.submerged && run.dive.oxygen > 0f)) && run.burst.diveLock <= 0f && !run.burst.active
             var speed = 25f
             for (entity in run.entities) {
                 val oldZ = previousZ[entity.id] ?: continue

@@ -275,7 +275,7 @@ object GameSimulation {
 
         // Check for burst end due to lever release or fuel exhaustion
         if (newBurst.active) {
-            val shouldEnd = throttle <= 0.8f || prev.fuel < 12f || !hasFuel
+            val shouldEnd = throttle <= 0.8f || !hasFuel
             if (shouldEnd) {
                 newBurst = newBurst.copy(
                     active = false,
@@ -406,7 +406,7 @@ object GameSimulation {
         // --- Player movement: magnetic lanes with inertia
         val drag = input.dragTargetX
         val nearestLane = round(prev.playerX).coerceIn(-1f, 1f)
-        val inputForce = if (drag != null) (drag - prev.playerX) * 15f else 0f
+        val inputForce = if (drag != null) (drag - prev.playerX) * 15f * (if (newBurst.active) 0.8f else 1f) else 0f
         val magnet = if (boosting) 3f else if (drag != null) 6f else 12f
         var velocityX = prev.playerVelocityX + (inputForce + (nearestLane - prev.playerX) * magnet - prev.playerVelocityX * 8f) * dt
         if (drag != null && sign(drag - prev.playerX) != sign(velocityX)) velocityX *= 0.5f

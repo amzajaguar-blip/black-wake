@@ -763,7 +763,7 @@ class GameSimulationTest {
 
     @Test
     fun burstSpeedIsOnePointSevenForTwoPointFiveSeconds() {
-        val start = quietRun().copy(fuel = 20f)
+        val start = quietRun().copy(fuel = 30f)
         // Prime the burst: cross above threshold
         val afterCross = step(start.copy(throttle = 0.9f), RunInput())
         assertTrue(afterCross.run.burst.active)
@@ -773,20 +773,22 @@ class GameSimulationTest {
         val midBurst = simulate(afterCross.run.copy(throttle = 0.9f), 0.5f, RunInput())
         assertEquals(expectedSpeed, midBurst.speedFactor, 0.01f)
         // After full burst duration, burst should end and heat lock active
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f, fuel = 30f), 2.5f + 2 * FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
     }
 
     @Test
     fun burstSteeringReducedToPointEight() {
-        val start = quietRun().copy(fuel = 20f)
-        // We verify that burst active does not affect the throttle value used for speed
-        // (which we already test in burstSpeed) and that the burst active flag is set.
-        val state = step(start.copy(throttle = 0.9f), RunInput())
-        assertTrue(state.run.burst.active)
-        // Note: Detailed steering force check is omitted as it requires internal metrics.
-        // The burst active flag is sufficient to confirm the burst state is engaged.
+        val base = quietRun().copy(fuel = 100f)
+        // Identical lever and drag input; only the burst differs.
+        val burstRun = step(base.copy(throttle = 0.9f), RunInput(dragTargetX = 1f)).run
+        assertTrue(burstRun.burst.active)
+        val controlRun = step(base.copy(burst = base.burst.copy(armed = false)).copy(throttle = 0.9f), RunInput(dragTargetX = 1f)).run
+        assertFalse(controlRun.burst.active)
+        // From rest with drag away from the lane centre the only lateral force is
+        // the drag force, so the velocity ratio isolates the burst steering scale.
+        assertEquals(controlRun.playerVelocityX * 0.8f, burstRun.playerVelocityX, 0.001f)
     }
 
     @Test
@@ -854,14 +856,14 @@ class GameSimulationTest {
 
     @Test
     fun burstEndsInHeatLockForSevenSeconds() {
-        val start = quietRun().copy(fuel = 20f)
+        val start = quietRun().copy(fuel = 30f)
         // Prime and sustain burst for 2.5 seconds
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
         val heatLockStart = afterBurst.burst.heatLock
         // Heat lock should start at 7.0 seconds
-        assertEquals(419/60f, heatLockStart, 0.001f)
+        assertEquals(7.0f, heatLockStart, 0.001f)
         // Simulate 7 seconds of heat lock
         val afterHeatLock = simulate(afterBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
         // After 7 seconds, heat lock should be 0
@@ -872,15 +874,15 @@ class GameSimulationTest {
 
     @Test
     fun burstBlocksDiveDuringHeatWithDiveLockTwoSeconds() {
-        val start = quietRun().copy(fuel = 20f)
+        val start = quietRun().copy(fuel = 30f)
         // Prime and end burst to start heat lock and dive lock
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
         assertFalse(afterBurst.burst.active)
         assertTrue(afterBurst.burst.heatLock > 0f)
         assertTrue(afterBurst.burst.diveLock > 0f)
         val diveLockStart = afterBurst.burst.diveLock
         // Dive lock should start at 2.0 seconds
-        assertEquals(119/60f, diveLockStart, 0.001f)
+        assertEquals(2.0f, diveLockStart, 0.001f)
         // While dive lock is active, dive should be blocked even if submerged conditions are met
         val stateWithDiveInput = step(afterBurst.copy(throttle = 0.9f), RunInput(diveHeld = true))
         // Dive should not be active
@@ -897,9 +899,9 @@ class GameSimulationTest {
 
     @Test
     fun repeatedBurstWaitsForHeat() {
-        val start = quietRun().copy(fuel = 20f)
+        val start = quietRun().copy(fuel = 100f)
         // First burst
-        val afterFirstBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
+        val afterFirstBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
         assertFalse(afterFirstBurst.burst.active)
         assertTrue(afterFirstBurst.burst.heatLock > 0f)
         // Immediately try to burst again (should not start because heat lock > 0)
@@ -908,30 +910,78 @@ class GameSimulationTest {
         // Wait for heat lock to expire (7 seconds)
         val afterHeatLockExpired = simulate(afterFirstBurst.copy(throttle = 0.9f), 7.0f + FRAME, RunInput())
         assertEquals(0.0f, afterHeatLockExpired.burst.heatLock, 0.001f)
+        assertFalse("holding the lever through heat lock must not auto-start another burst", afterHeatLockExpired.burst.active)
         // Re-arm the burst lever
         val rearmed = step(afterHeatLockExpired.copy(throttle = 0.5f), RunInput()).run
         // Now we can burst again
         val stateAfterSecond = step(rearmed.copy(throttle = 0.9f), RunInput())
         assertTrue(stateAfterSecond.run.burst.active)
     }
+    @Test
+    fun spintaZeroFuelEndsBurst() {
+        val start = quietRun().copy(fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
+        assertTrue(afterCross.run.burst.active)
+        // Spec edge case: fuel reaching zero ends the burst immediately.
+        val afterDry = step(afterCross.run.copy(fuel = 0f), RunInput())
+        assertFalse(afterDry.run.burst.active)
+        assertTrue(afterDry.run.burst.heatLock > 0f)
+        assertTrue(afterDry.run.burst.diveLock > 0f)
+    }
 
+    @Test
+    fun spintaCommittedRamUnaffectedByBurst() {
+        // Mirror the committed-ram setup of ramDamagesTheHullUnlessSubmerged
+        // (READ that test first and copy its exact pursuer setup values).
+        // The ram must still execute while the burst is active.
+        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
+        val base = quietRun().copy(fuel = 100f, pursuers = listOf(ram))
+        val afterCross = step(base.copy(throttle = 0.9f), RunInput())
+        assertTrue(afterCross.run.burst.active)
+        val rammed = step(afterCross.run.copy(throttle = 0.9f), RunInput()).run
+        assertTrue("committed ram must not be cancelled by the burst", rammed.hull < rammed.maxHull || rammed.invulnerable > 0f)
+    }
+
+    @Test
+    fun spintaFrameRateInvariance30_60_120() {
+        for (frameTime in listOf(1f / 30f, 1f / 60f, 1f / 120f)) {
+            var run = quietRun().copy(fuel = 100f).copy(throttle = 0.9f)
+            var elapsed = 0f
+            while (elapsed < 1.0f) {
+                val dt = min(frameTime, 1.0f - elapsed)
+                run = step(run, RunInput(), dt = dt).run
+                elapsed += dt
+            }
+            assertTrue(run.burst.active)
+            assertEquals(1.0f, run.burst.timer, 0.02f)
+        }
+    }
+
+    @Test
+    fun spintaPauseFreezesBurstTimers() {
+        val start = quietRun().copy(fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f), RunInput())
+        assertTrue(afterCross.run.burst.active)
+        // Continuous burst time vs the same time split by a pause (no steps
+        // during the pause): pure simulation time means identical timers.
+        val continuous = step(step(afterCross.run, RunInput(), dt = 0.5f).run, RunInput(), dt = 0.5f).run
+        val halfWay = step(afterCross.run, RunInput(), dt = 0.5f).run
+        val resumed = step(halfWay, RunInput(), dt = 0.5f).run
+        assertEquals(continuous.burst.timer, resumed.burst.timer, 0.0001f)
+        assertEquals(continuous.burst.active, resumed.burst.active)
+        assertEquals(continuous.burst.heatLock, resumed.burst.heatLock, 0.0001f)
+        assertEquals(continuous.fuel, resumed.fuel, 0.001f)
+    }
+
+    
     // Revised existing tests
     @Test
     fun throttleAloneSetsTopSpeed() {
-        // First, we need to clear any burst or heat lock from previous actions.
-        // Start with a clean state.
-        val start = quietRun()
-        // Simulate a burst and its heat lock to ensure we are in a clean state.
-        // We'll do a burst with throttle 0.9 for 2.5s (triggered by high throttle), then wait for heat lock (7s) with throttle 0 to avoid re-triggering.
-        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + FRAME, RunInput())
-        val afterHeatLock = simulate(afterBurst.copy(throttle = 0.0f), 7.0f + FRAME, RunInput())
-        // Now we are past burst and heat lock.
-        // Set throttle to 1.0 and simulate 2 seconds.
-        val run = simulate(afterHeatLock.copy(throttle = 1.0f), 2.0f, RunInput())
-        // After 2 seconds at full lever, speedFactor should be 1.2 * boat.speed (post-burst steady state)
+        // Non-burst lever formula in isolation: the armed=false control latch
+        // can never ignite, so the lever alone drives the speed.
+        val start = quietRun().copy(burst = BurstState(armed = false))
+        val run = simulate(start.copy(throttle = 1.0f), 2.0f, RunInput())
         assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.1f)
-        // Note: The burst and heat lock are intentionally waited out to measure the
-        // normal throttle response without burst interference.
     }
 
     @Test

@@ -1052,7 +1052,7 @@ class GameSimulationTest {
     @Test
     fun repairInterruptedByCollisionKeepsPartialHull() {
         val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        base = quietRun().copy(pursuers = listOf(ram), hull = 50f, fuel = 60f)
+        val base = quietRun().copy(pursuers = listOf(ram), hull = 50f, fuel = 60f)
         val (runAfterStart, _) = GameSimulation.startRepair(base.copy(throttle = 0.2f))
         assertTrue(runAfterStart.repair.active)
         val end = step(runAfterStart)

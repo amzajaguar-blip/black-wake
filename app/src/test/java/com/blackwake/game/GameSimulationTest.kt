@@ -1321,6 +1321,61 @@ class GameSimulationTest {
         assertEquals(0.08f, chattered.detection - control.detection, 0.01f)
     }
 
+    /** Twin runs differing only by lever (0.9 vs 0.5), empty sea, burst disarmed; heat lock as given. */
+    private fun leverTwins(heatLock: Float, playerX: Float = 0f): Pair<RunState, RunState> {
+        val base = quietRun().copy(
+            fuel = 100f,
+            detection = 0.3f,
+            pursuitCooldown = 100f,
+            burst = BurstState(heatLock = heatLock, armed = false),
+            entities = emptyList(),
+            pursuers = emptyList(),
+            playerX = playerX
+        )
+        return base.copy(throttle = 0.9f) to base.copy(throttle = 0.5f)
+    }
+
+    @Test
+    fun spintaHeatLockClampsFuelDrain() {
+        val (high, half) = leverTwins(heatLock = 5f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(half, RunInput(), dt = 0.5f).run
+        assertFalse(a.burst.active)
+        assertTrue(a.burst.heatLock > 0f)
+        assertEquals("lever 0.9 in heat lock must burn fuel like lever 0.5", b.fuel, a.fuel, 0.0001f)
+    }
+
+    @Test
+    fun spintaHeatLockClampsSignature() {
+        val (high, half) = leverTwins(heatLock = 5f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(half, RunInput(), dt = 0.5f).run
+        assertFalse(a.burst.active)
+        assertTrue(a.burst.heatLock > 0f)
+        assertEquals("lever 0.9 in heat lock must leave the signature of lever 0.5", b.detection, a.detection, 1e-5f)
+    }
+
+    @Test
+    fun spintaHeatLockRestoresLaneMagnet() {
+        var (a, b) = leverTwins(heatLock = 5f, playerX = 0.3f)
+        repeat(20) {
+            a = step(a, RunInput()).run.copy(entities = emptyList(), spawnClock = 1_000f)
+            b = step(b, RunInput()).run.copy(entities = emptyList(), spawnClock = 1_000f)
+        }
+        assertFalse(a.burst.active)
+        assertTrue(a.burst.heatLock > 0f)
+        assertEquals("lever 0.9 in heat lock must snap to lanes like lever 0.5", b.playerX, a.playerX, 1e-4f)
+    }
+
+    @Test
+    fun leverStillPricedOutsideHeatLock() {
+        val (high, half) = leverTwins(heatLock = 0f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(half, RunInput(), dt = 0.5f).run
+        assertFalse("disarmed latch must not fire", a.burst.active)
+        assertTrue("outside heat lock the high lever must cost more fuel", a.fuel < b.fuel)
+    }
+
     private companion object {
         const val FRAME = 1f / 60f
     }

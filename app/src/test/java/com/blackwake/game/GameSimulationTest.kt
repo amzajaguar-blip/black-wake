@@ -1184,6 +1184,97 @@ class GameSimulationTest {
         assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // SENZA CARBURANTE" })
     }
 
+    /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */
+    private fun leverFrames(start: RunState, levers: List<Float>, onFrame: (RunState) -> Unit = {}): Pair<RunState, Int> {
+        var run = start
+        var ignitions = 0
+        for (lever in levers) {
+            val wasActive = run.burst.active
+            val result = step(run.copy(throttle = lever))
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            if (!wasActive && run.burst.active) ignitions++
+            onFrame(run)
+        }
+        return run to ignitions
+    }
+
+    @Test
+    fun spintaPursuersFallBehindCappedAt110() {
+        val base = quietRun().copy(fuel = 100f, throttle = 0.9f, pursuitCooldown = 100f)
+        val burstBase = base.copy(burst = BurstState(active = true, timer = 0.5f, armed = false))
+        val controlBase = base.copy(burst = BurstState(armed = false))
+
+        // (a) A fresh pursuer behind the cap must not be pulled forward to 110 by the burst.
+        val fresh = Pursuer(id = 99, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.SPAWN_Y, state = PursuerState.DETECTED)
+        val burstFresh = step(burstBase.copy(pursuers = listOf(fresh))).run
+        val controlFresh = step(controlBase.copy(pursuers = listOf(fresh))).run
+        assertTrue(burstFresh.burst.active)
+        assertFalse(controlFresh.burst.active)
+        assertEquals(
+            "burst must not pull a pursuer behind the cap forward",
+            controlFresh.pursuers.single().y,
+            burstFresh.pursuers.single().y,
+            0.001f
+        )
+
+        // (b) A pursuer that lost the target must still drift past GONE_Y and despawn during the burst.
+        val lost = Pursuer(id = 98, type = EnemyBoatType.PATROL, x = 0f, y = 125f, state = PursuerState.LOST_TARGET)
+        val afterLost = simulate(burstBase.copy(pursuers = listOf(lost)), 0.5f)
+        assertTrue(afterLost.burst.active)
+        assertTrue("lost pursuer must despawn during the burst", afterLost.pursuers.isEmpty())
+
+        // (c) The push-back is capped at 110.
+        val near = Pursuer(id = 97, type = EnemyBoatType.PATROL, x = 0f, y = 109.95f, state = PursuerState.SEARCH)
+        val burstNear = step(burstBase.copy(pursuers = listOf(near))).run
+        assertTrue(burstNear.burst.active)
+        assertTrue("burst push-back must be capped at 110", burstNear.pursuers.single().y <= 110f + 1e-4f)
+    }
+
+    @Test
+    fun burstReentryDuringHeatLockDoesNotFireOnExpiry() {
+        val start = quietRun().copy(fuel = 100f)
+        // 1. Ignition.
+        val (ignited, firstIgnitions) = leverFrames(start, listOf(0.9f))
+        assertEquals(1, firstIgnitions)
+        assertTrue(ignited.burst.active)
+        // 2. Lever released: burst ends into heat lock.
+        val (released, _) = leverFrames(ignited, listOf(0.7f))
+        assertFalse(released.burst.active)
+        assertEquals(7f, released.burst.heatLock, 0.001f)
+        // 3. Lever stays low inside the heat lock.
+        val (lowered, _) = leverFrames(released, List((3f / FRAME).toInt()) { 0.7f })
+        assertTrue(lowered.burst.heatLock > 0f)
+        // 4. Lever raised during the heat lock and held across its expiry.
+        val (held, heldIgnitions) = leverFrames(lowered, List((5f / FRAME).toInt()) { 0.9f }) { frame ->
+            assertFalse("lever raised during heat lock must not fire at expiry", frame.burst.active)
+        }
+        assertEquals(0, heldIgnitions)
+        assertEquals(0f, held.burst.heatLock, 0.001f)
+        // Positive control: a real low-high crossing after the lock fires exactly once.
+        val (rearmed, rearmIgnitions) = leverFrames(held, listOf(0.7f, 0.9f))
+        assertEquals(1, rearmIgnitions)
+        assertTrue(rearmed.burst.active)
+    }
+
+    @Test
+    fun spintaOneIgnitionPerThresholdCrossing() {
+        val start = quietRun().copy(fuel = 100f)
+        // Lever noise above the threshold: a single ignition.
+        val noise = listOf(0.9f, 0.81f, 0.95f)
+        val (noisy, noisyIgnitions) = leverFrames(start, List(30) { noise[it % noise.size] })
+        assertEquals(1, noisyIgnitions)
+        assertTrue(noisy.burst.active)
+
+        // Chatter across the threshold: a single ignition and a single +0.08 ignition cost.
+        val chatter = List(60) { if (it % 2 == 0) 0.79f else 0.81f }
+        val (chattered, chatterIgnitions) = leverFrames(start, chatter)
+        val (control, controlIgnitions) = leverFrames(start.copy(burst = BurstState(heatLock = 100f)), chatter)
+        assertEquals(1, chatterIgnitions)
+        assertEquals(0, controlIgnitions)
+        assertEquals(0.08f, chattered.detection - control.detection, 0.01f)
+    }
+
     private companion object {
         const val FRAME = 1f / 60f
     }

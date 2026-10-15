@@ -252,7 +252,6 @@ object GameSimulation {
         // --- Engine
         val hasFuel = prev.fuel > 0f
         val throttle = if (hasFuel) prev.throttle else 0f
-        val boosting = throttle > 0.8f
         val silent = throttle < 0.2f
 
         // --- Burst State Update
@@ -341,6 +340,7 @@ object GameSimulation {
         // --- Speed: throttle, vessel
         val normalSpeed = (0.8f + throttle * 0.4f) * boat.speed
         val heatClampedThrottle = if (newBurst.heatLock > 0f) min(throttle, 0.5f) else throttle
+        val boostingEffective = heatClampedThrottle > 0.8f
         val heatClampedSpeed = (0.8f + heatClampedThrottle * 0.4f) * boat.speed
         // Repair active overrides speed to use effective throttle 0.2f
         val effectiveThrottle = when {
@@ -409,15 +409,15 @@ object GameSimulation {
 
         // --- Detection
         val hiding = prev.entities.any { it.type == EntityType.WRECK && it.z > 0f && it.z < 25f && abs(it.x - prev.playerX) < 0.6f }
-        var stealth = (0.3f + throttle * 0.7f) * boat.detection
+        var stealth = (0.3f + heatClampedThrottle * 0.7f) * boat.detection
         if (hiding) stealth *= 0.2f
         if (submerged) stealth *= 0.1f
-        val boostAccumulation = if (throttle > 0.6f) (throttle - 0.6f) * 0.3f else 0f
+        val boostAccumulation = if (heatClampedThrottle > 0.6f) (heatClampedThrottle - 0.6f) * 0.3f else 0f
         val accumulation = (0.035f * sector.threat + prev.activePursuers * 0.02f + boostAccumulation) * stealth
         val decay = when {
             submerged -> 0.30f + modules.stealth * 0.05f
             silent -> 0.16f + modules.stealth * 0.04f
-            hiding && !boosting -> 0.12f + modules.stealth * 0.02f
+            hiding && !boostingEffective -> 0.12f + modules.stealth * 0.02f
             else -> 0.02f
         }
         var detection = (prev.detection + dt * (accumulation - decay)).coerceIn(0f, 1f)
@@ -437,7 +437,7 @@ object GameSimulation {
         if (newBurst.active) {
             fuel = max(0f, prev.fuel - dt * 4.5f * boat.fuelUse)
         } else {
-            val boostUse = throttle * throttle * 6.1f * (1f - 0.12f * modules.engine)
+            val boostUse = heatClampedThrottle * heatClampedThrottle * 6.1f * (1f - 0.12f * modules.engine)
             fuel = max(0f, prev.fuel - dt * (0.5f + boostUse) * boat.fuelUse)
         }
 
@@ -452,7 +452,7 @@ object GameSimulation {
         val drag = input.dragTargetX
         val nearestLane = round(prev.playerX).coerceIn(-1f, 1f)
         val inputForce = if (drag != null) (drag - prev.playerX) * 15f * (if (newBurst.active) 0.8f else 1f) else 0f
-        val magnet = if (boosting) 3f else if (drag != null) 6f else 12f
+        val magnet = if (boostingEffective) 3f else if (drag != null) 6f else 12f
         var velocityX = prev.playerVelocityX + (inputForce + (nearestLane - prev.playerX) * magnet - prev.playerVelocityX * 8f) * dt
         if (drag != null && sign(drag - prev.playerX) != sign(velocityX)) velocityX *= 0.5f
         var playerX = prev.playerX + velocityX * dt

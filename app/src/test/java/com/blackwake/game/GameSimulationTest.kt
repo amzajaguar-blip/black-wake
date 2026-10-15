@@ -895,6 +895,26 @@ class GameSimulationTest {
         val stateAfterDiveLock = step(afterDiveLock, RunInput(diveHeld = true))
         // Assuming we have enough oxygen and not locked out, dive should be active
         // We'll trust that the dive logic works.
+        assertTrue("dive must work again once the dive lock has expired", stateAfterDiveLock.run.dive.submerged)
+    }
+
+    @Test
+    fun spintaHeatLockClampsCruiseToHalfLever() {
+        val start = quietRun().copy(fuel = 100f)
+        // Burst runs its full 2.5 s with the lever held at 0.9 and ends into heat lock.
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
+        assertFalse(afterBurst.burst.active)
+        assertTrue(afterBurst.burst.heatLock > 0f)
+        // 2 s inside the 7 s heat lock: lever held high vs a control at a 0.5 lever.
+        val held = simulate(afterBurst.copy(throttle = 0.9f), 2.0f, RunInput())
+        val control = simulate(afterBurst.copy(throttle = 0.5f), 2.0f, RunInput())
+        assertTrue("still inside the heat lock", held.burst.heatLock > 0f)
+        assertFalse(held.burst.active)
+        assertEquals(0.9f, held.throttle, 0f)
+        // Heat-lock speed formula: (0.8 + min(lever, 0.5) * 0.4) * boat.speed.
+        val clampedSpeed = (0.8f + 0.5f * 0.4f) * boatSpec(progress.boat).speed
+        assertEquals(clampedSpeed, held.speedFactor, 0.02f)
+        assertEquals("lever 0.9 in heat lock must cruise like lever 0.5", control.speedFactor, held.speedFactor, 0.001f)
     }
 
     @Test
@@ -931,15 +951,39 @@ class GameSimulationTest {
 
     @Test
     fun spintaCommittedRamUnaffectedByBurst() {
-        // Mirror the committed-ram setup of ramDamagesTheHullUnlessSubmerged
-        // (READ that test first and copy its exact pursuer setup values).
-        // The ram must still execute while the burst is active.
-        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = 84f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
-        val base = quietRun().copy(fuel = 100f, pursuers = listOf(ram))
-        val afterCross = step(base.copy(throttle = 0.9f), RunInput())
-        assertTrue(afterCross.run.burst.active)
-        val rammed = step(afterCross.run.copy(throttle = 0.9f), RunInput()).run
-        assertTrue("committed ram must not be cancelled by the burst", rammed.hull < rammed.maxHull || rammed.invulnerable > 0f)
+        // A ram that has just finished its PursuerAI.WIND_UP and starts charging from the cruise
+        // row (y = 70): it needs several frames to reach the player's row (|y - PLAYER_Y| < 4),
+        // so the burst is active on every frame of the approach, not only at ignition.
+        val ram = Pursuer(id = 5, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP, lockX = 0f)
+        val base = quietRun().copy(fuel = 100f, throttle = 0.9f, pursuers = listOf(ram))
+        val burstBase = base
+        val controlBase = base.copy(burst = BurstState(armed = false))
+        // Ram damage formula, GameSimulation.kt:495.
+        val expectedLoss = maxOf(4f, PursuerAI.spec(EnemyBoatType.PATROL).ramDamage - base.modules.hull * 2f)
+
+        var burstFrame = 0
+        var burstHitFrame = -1
+        var burstActiveAtHit = false
+        val burstEnd = simulate(burstBase, 1f, RunInput(), emptySea = false) { run ->
+            burstFrame++
+            if (burstHitFrame < 0 && run.hull < run.maxHull) {
+                burstHitFrame = burstFrame
+                burstActiveAtHit = run.burst.active
+            }
+        }
+        var controlFrame = 0
+        var controlHitFrame = -1
+        val controlEnd = simulate(controlBase, 1f, RunInput(), emptySea = false) { run ->
+            controlFrame++
+            assertFalse(run.burst.active)
+            if (controlHitFrame < 0 && run.hull < run.maxHull) controlHitFrame = controlFrame
+        }
+
+        assertTrue("control ram must land within 1 s", controlHitFrame > 1)
+        assertTrue("burst ram must land after several frames, not in the ignition frame", burstHitFrame > 1)
+        assertTrue("committed ram must land while the burst is active", burstActiveAtHit)
+        assertEquals(expectedLoss, controlEnd.maxHull - controlEnd.hull, 0.001f)
+        assertEquals("committed ram must not be cancelled by the burst", expectedLoss, burstEnd.maxHull - burstEnd.hull, 0.001f)
     }
 
     @Test
@@ -958,7 +1002,9 @@ class GameSimulationTest {
     }
 
     @Test
-    fun spintaPauseFreezesBurstTimers() {
+    fun spintaTimersAdvanceOnlyWithSimulationTime() {
+        // Pause itself is not exercised here: GameViewModel.frame() returns early when
+        // mode != RUNNING (GameViewModel.kt:52-54), so no step runs while paused.
         val start = quietRun().copy(fuel = 100f)
         val afterCross = step(start.copy(throttle = 0.9f), RunInput())
         assertTrue(afterCross.run.burst.active)

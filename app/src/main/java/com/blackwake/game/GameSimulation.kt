@@ -272,7 +272,7 @@ object GameSimulation {
         }
 
         // Re-arm: whenever the lever is low, the latch arms
-        if (throttle <= 0.8f) {
+        if (throttle <= 0.8f && newBurst.heatLock <= 0f) {
             newBurst = newBurst.copy(armed = true)
         }
 
@@ -505,7 +505,7 @@ object GameSimulation {
                 // Bounce back into pursuit instead of ramming through again.
                 next = next.copy(state = PursuerState.PURSUIT, stateTimer = 0f, attackTimer = 0f)
             }
-            if (newBurst.active) {
+            if (newBurst.active && next.y < 110f) {
                 val extraY = 18f * dt
                 next = next.copy(y = min(next.y + extraY, 110f))
             }

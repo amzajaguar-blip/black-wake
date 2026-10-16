@@ -724,6 +724,42 @@ class GameSimulationTest {
         assertEquals(PursuerState.PURSUIT, reacquired.state)
     }
 
+    // U4-R10 (Posky DC-3, 2026-10-16): the flare can be fired only after the SPINTA, never during it.
+    @Test
+    fun flareBlockedDuringActiveBurst() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f, throttle = 0.9f)
+        val ignition = step(start)
+        assertNull("run ended unexpectedly: ${ignition.outcome?.reason}", ignition.outcome)
+        val run = ignition.run
+        assertTrue("burst must be active before the flare", run.burst.active)
+        assertEquals(3, run.flare.charges)
+        assertEquals(0f, run.flare.timer, 0f)
+        assertFalse(run.dive.submerged)
+        val (afterFlare, events) = GameSimulation.launchFlare(run)
+        assertEquals("flare must not spend a charge during the burst", run.flare.charges, afterFlare.flare.charges)
+        assertEquals("flare must not add detection during the burst", run.detection, afterFlare.detection, 0f)
+        assertTrue("flare during the burst must emit no events, got $events", events.isEmpty())
+        assertEquals("flare during the burst must be a no-op", run, afterFlare)
+    }
+
+    @Test
+    fun flareAllowedDuringHeatLockAfterBurst() {
+        val start = quietRun().copy(fuel = 100f)
+        val afterBurst = simulate(start.copy(throttle = 0.9f), 2.5f + 2 * FRAME, RunInput())
+        assertFalse(afterBurst.burst.active)
+        assertTrue(afterBurst.burst.heatLock > 0f)
+        // Pin detection below 0.82 so the +0.18 is not clamped at 1.
+        val before = afterBurst.copy(detection = 0.3f)
+        assertEquals(3, before.flare.charges)
+        assertEquals(0f, before.flare.timer, 0f)
+        assertFalse(before.dive.submerged)
+        val (afterFlare, events) = GameSimulation.launchFlare(before)
+        assertEquals(before.flare.charges - 1, afterFlare.flare.charges)
+        assertEquals(GameSimulation.FLARE_SECONDS, afterFlare.flare.timer, 0.001f)
+        assertEquals(before.detection + 0.18f, afterFlare.detection, 0.001f)
+        assertEquals(listOf<GameEvent>(GameEvent.Noise(0.35f, 0.5f)), events)
+    }
+
     @Test
     fun burstTriggersOnceAbovePointEight() {
         val start = quietRun().copy(fuel = 20f)

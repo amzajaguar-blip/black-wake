@@ -306,6 +306,7 @@ object GameSimulation {
                 burstEndedThisFrame = true
                 events += GameEvent.Vibrate(HAPTIC_OVERHEAT)
                 events += GameEvent.Tone(100f, 0.2f, 0.5f)
+                say("SPINTA ESAURITA // MOTORE CALDO", MessageTone.WARNING)
             } else {
                 newBurst = newBurst.copy(timer = updatedTimer)
             }
@@ -327,6 +328,8 @@ object GameSimulation {
                 // (no fuel already forces throttle to 0). A voluntary release gets only the audio drop.
                 if (!hasFuel) events += GameEvent.Vibrate(HAPTIC_OVERHEAT)
                 events += GameEvent.Tone(100f, 0.2f, 0.5f)
+                if (!hasFuel) say("SPINTA INTERROTTA // CARBURANTE", MessageTone.WARNING)
+                else say("SPINTA RILASCIATA", MessageTone.INFO)
             }
         }
 

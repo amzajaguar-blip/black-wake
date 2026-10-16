@@ -1335,11 +1335,104 @@ class GameSimulationTest {
         assertTrue(afterLost.burst.active)
         assertTrue("lost pursuer must despawn during the burst", afterLost.pursuers.isEmpty())
 
-        // (c) The push-back is capped at 110.
-        val near = Pursuer(id = 97, type = EnemyBoatType.PATROL, x = 0f, y = 109.95f, state = PursuerState.SEARCH)
+        // (c) The push-back is capped at 110: the AI alone (approach(y, 110f, 8f * dt), PursuerAI.kt:158)
+        // stops short of 110, the 18/s push would overshoot it, so only the cap yields exactly 110.
+        val near = Pursuer(id = 97, type = EnemyBoatType.PATROL, x = 0f, y = 109.8f, state = PursuerState.SEARCH)
         val burstNear = step(burstBase.copy(pursuers = listOf(near))).run
+        val controlNear = step(controlBase.copy(pursuers = listOf(near))).run
         assertTrue(burstNear.burst.active)
+        assertFalse(controlNear.burst.active)
         assertTrue("burst push-back must be capped at 110", burstNear.pursuers.single().y <= 110f + 1e-4f)
+        assertEquals("burst push-back must land exactly on the cap", 110f, burstNear.pursuers.single().y, 1e-4f)
+        assertEquals("control must follow the AI approach only", 109.8f + 8f * FRAME, controlNear.pursuers.single().y, 1e-3f)
+    }
+
+    /** Burst twin (active, timer 0, disarmed) and control twin (disarmed): lever 0.9, fuel 100, one pursuer, no spawns. */
+    private fun spintaTwins(pursuer: Pursuer): Pair<RunState, RunState> {
+        val base = quietRun().copy(fuel = 100f, throttle = 0.9f, pursuitCooldown = 100f, playerX = 0f, pursuers = listOf(pursuer))
+        return base.copy(burst = BurstState(active = true, timer = 0f, armed = false)) to base.copy(burst = BurstState(armed = false))
+    }
+
+    /**
+     * Steps both twins frame by frame with an empty sea (at most 2 s) and returns the 1-based frame index of the
+     * first hull loss in each run. While either pursuer is in its ram wind-up the two pursuer rows must match.
+     * Returns the number of wind-up frames compared as the third value.
+     */
+    private fun ramHitFrames(burstStart: RunState, controlStart: RunState): Triple<Int, Int, Int> {
+        var burst = burstStart
+        var control = controlStart
+        var burstHit = -1
+        var controlHit = -1
+        var windUpFrames = 0
+        var frame = 0
+        while (frame < (2f / FRAME).toInt() && (burstHit < 0 || controlHit < 0)) {
+            frame++
+            val b = step(burst)
+            val c = step(control)
+            assertNull("burst run ended unexpectedly: ${b.outcome?.reason}", b.outcome)
+            assertNull("control run ended unexpectedly: ${c.outcome?.reason}", c.outcome)
+            burst = b.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            control = c.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            assertTrue("burst must stay active during the ram", burst.burst.active)
+            assertFalse("control must never ignite", control.burst.active)
+            val bp = burst.pursuers.single()
+            val cp = control.pursuers.single()
+            val inWindUp = { p: Pursuer -> p.state == PursuerState.INTERCEPT && p.stateTimer < PursuerAI.WIND_UP }
+            if (inWindUp(bp) || inWindUp(cp)) {
+                windUpFrames++
+                assertEquals("wind-up row must not be pushed by the burst (frame $frame)", cp.y, bp.y, 1e-4f)
+            }
+            if (burstHit < 0 && burst.hull < burstStart.hull) burstHit = frame
+            if (controlHit < 0 && control.hull < controlStart.hull) controlHit = frame
+        }
+        return Triple(burstHit, controlHit, windUpFrames)
+    }
+
+    @Test
+    fun spintaPushGuaranteesNetGainAgainstCruisingPursuer() {
+        // attackDelay is 4.5 s for PATROL, so the pursuer stays in PURSUIT for the whole second.
+        val cruiser = Pursuer(id = 96, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y, state = PursuerState.PURSUIT, attackTimer = 0f)
+        val (burstBase, controlBase) = spintaTwins(cruiser)
+        val burstEnd = simulate(burstBase, 1.0f)
+        val controlEnd = simulate(controlBase, 1.0f)
+        assertTrue(burstEnd.burst.active)
+        assertFalse(controlEnd.burst.active)
+        assertEquals(PursuerState.PURSUIT, burstEnd.pursuers.single().state)
+        assertEquals(PursuerState.PURSUIT, controlEnd.pursuers.single().state)
+        val gain = burstEnd.pursuers.single().y - controlEnd.pursuers.single().y
+        assertTrue("burst must win a net 18/s against the AI pull to CRUISE_Y (gain=$gain)", gain >= 17.5f)
+    }
+
+    @Test
+    fun spintaPushSuppressedDuringRamWindup() {
+        val ram = Pursuer(id = 95, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.INTERCEPT, stateTimer = 0f, lockX = 0f)
+        val (burstBase, controlBase) = spintaTwins(ram)
+        val (burstHit, controlHit, windUpFrames) = ramHitFrames(burstBase, controlBase)
+        assertTrue("wind-up frames must have been compared", windUpFrames > 0)
+        assertTrue("control ram must land within 2 s", controlHit > 0)
+        assertEquals("burst must not move a ram in wind-up into the hit row earlier", controlHit, burstHit)
+    }
+
+    @Test
+    fun spintaPushSuppressedDuringRamCharge() {
+        val ram = Pursuer(id = 94, type = EnemyBoatType.PATROL, x = 0f, y = 74f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP, lockX = 0f)
+        val (burstBase, controlBase) = spintaTwins(ram)
+        val (burstHit, controlHit, _) = ramHitFrames(burstBase, controlBase)
+        assertTrue("control ram must land within 2 s", controlHit > 0)
+        assertEquals("burst push must not add to the charge speed", controlHit, burstHit)
+    }
+
+    @Test
+    fun spintaRamInsideHitWindowAtIgnition() {
+        val ram = Pursuer(id = 93, type = EnemyBoatType.PATROL, x = 0f, y = 83f, state = PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP + 0.1f, lockX = 0f)
+        val base = quietRun().copy(fuel = 100f, throttle = 0.9f, pursuitCooldown = 100f, playerX = 0f, pursuers = listOf(ram))
+        val burst = step(base.copy(burst = BurstState(armed = true))).run
+        val control = step(base.copy(burst = BurstState(armed = false))).run
+        assertTrue("ignition must happen this frame", burst.burst.active)
+        assertFalse(control.burst.active)
+        val expectedLoss = maxOf(4f, PursuerAI.spec(EnemyBoatType.PATROL).ramDamage - base.modules.hull * 2f)
+        assertEquals(expectedLoss, base.hull - control.hull, 0.001f)
+        assertEquals("ram in the hit window must land identically at ignition", control.hull, burst.hull, 0.001f)
     }
 
     @Test

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.min
 import kotlin.random.Random
 
 /**
@@ -224,7 +225,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         SynthAudioEngine.muted = state.progress.muted
         SynthAudioEngine.bedEnabled = inMission
         if (inMission) {
-            val throttle = if (run.fuel > 0f) run.throttle else 0f
+            val lever = if (run.fuel > 0f) run.throttle else 0f
+            // Heat lock clamps the engine to half lever, so the audio drops out of boost during lockout.
+            val throttle = if (run.burst.heatLock > 0f) min(lever, 0.5f) else lever
             SynthAudioEngine.engineLevel = throttle
             SynthAudioEngine.boosting = throttle > 0.8f
             SynthAudioEngine.detection = run.detection

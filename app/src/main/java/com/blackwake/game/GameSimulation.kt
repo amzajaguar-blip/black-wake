@@ -38,6 +38,10 @@ object GameSimulation {
     private const val PING_SPEED = 80f
     private const val MESSAGE_SECONDS = 1.8f
     private const val RADIO_SECONDS = 5.5f
+    /** Burst ignition haptic: one short pulse. */
+    private val HAPTIC_IGNITION = listOf(0L, 30L)
+    /** Forced overheat haptic (timer end or fuel exhaustion): two pulses split by an 80 ms gap. */
+    private val HAPTIC_OVERHEAT = listOf(0L, 30L, 80L, 30L)
 
     private class TutorialStep(val at: Float, val spawns: List<Pair<EntityType, Int>>, val hint: String)
 
@@ -283,7 +287,7 @@ object GameSimulation {
                 armed = false
             )
             burstStartedThisFrame = true
-            events += GameEvent.Vibrate(listOf(0, 30))
+            events += GameEvent.Vibrate(HAPTIC_IGNITION)
             events += GameEvent.Tone(200f, 0.2f, 0.5f)
         }
 
@@ -300,7 +304,7 @@ object GameSimulation {
                     armed = false
                 )
                 burstEndedThisFrame = true
-                events += GameEvent.Vibrate(listOf(0, 30, 0, 30))
+                events += GameEvent.Vibrate(HAPTIC_OVERHEAT)
                 events += GameEvent.Tone(100f, 0.2f, 0.5f)
             } else {
                 newBurst = newBurst.copy(timer = updatedTimer)
@@ -319,7 +323,9 @@ object GameSimulation {
                     armed = false
                 )
                 burstEndedThisFrame = true
-                events += GameEvent.Vibrate(listOf(0, 30, 0, 30))
+                // Fuel exhaustion is a forced overheat and wins over a simultaneous lever release
+                // (no fuel already forces throttle to 0). A voluntary release gets only the audio drop.
+                if (!hasFuel) events += GameEvent.Vibrate(HAPTIC_OVERHEAT)
                 events += GameEvent.Tone(100f, 0.2f, 0.5f)
             }
         }

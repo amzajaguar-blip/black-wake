@@ -270,7 +270,7 @@ object GameSimulation {
             newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
         }
 
-        // Re-arm: whenever the lever is low, the latch arms
+        // Re-arm: the latch arms only when the lever is low AND the heat lock has expired
         if (throttle <= 0.8f && newBurst.heatLock <= 0f) {
             newBurst = newBurst.copy(armed = true)
         }

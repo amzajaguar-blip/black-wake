@@ -894,7 +894,7 @@ class GameSimulationTest {
         // Now dive should be possible if submerged conditions are met
         val stateAfterDiveLock = step(afterDiveLock, RunInput(diveHeld = true))
         // Assuming we have enough oxygen and not locked out, dive should be active
-        // We'll trust that the dive logic works.
+        // U4-R1b: the dive must actually engage on this frame, proving the expired dive lock no longer blocks it.
         assertTrue("dive must work again once the dive lock has expired", stateAfterDiveLock.run.dive.submerged)
     }
 
@@ -947,6 +947,71 @@ class GameSimulationTest {
         assertFalse(afterDry.run.burst.active)
         assertTrue(afterDry.run.burst.heatLock > 0f)
         assertTrue(afterDry.run.burst.diveLock > 0f)
+    }
+
+    /** Android waveform timings are [off, on, off, on]: two non-zero pulses split by an off gap of at least 50 ms. */
+    private fun isTwoDistinctPulses(pattern: List<Long>): Boolean =
+        pattern.size == 4 && pattern[1] > 0L && pattern[3] > 0L && pattern[2] >= 50L
+
+    @Test
+    fun burstTimerEndEmitsTwoDistinctPulses() {
+        var run = quietRun().copy(entities = emptyList(), fuel = 30f, throttle = 0.9f)
+        var endEvents: List<GameEvent>? = null
+        var frames = 0
+        while (endEvents == null && frames < 400) {
+            val wasActive = run.burst.active
+            val result = step(run.copy(throttle = 0.9f))
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            if (wasActive && !run.burst.active) endEvents = result.events
+            frames++
+        }
+        assertNotNull("burst must end by its 2.5 s timer", endEvents)
+        assertTrue("timer end, not fuel exhaustion", run.fuel > 0f)
+        assertEquals(7f, run.burst.heatLock, 0.001f)
+        val vibrations = endEvents!!.filterIsInstance<GameEvent.Vibrate>()
+        assertEquals("exactly one overheat haptic on the timer-end frame", 1, vibrations.size)
+        assertTrue("overheat must be two distinct pulses, got ${vibrations[0].pattern}", isTwoDistinctPulses(vibrations[0].pattern))
+    }
+
+    @Test
+    fun burstFuelExhaustionEmitsTwoDistinctPulses() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f))
+        assertTrue(afterCross.run.burst.active)
+        val afterDry = step(afterCross.run.copy(entities = emptyList(), spawnClock = 1_000f, fuel = 0f))
+        assertNull("run ended unexpectedly: ${afterDry.outcome?.reason}", afterDry.outcome)
+        assertFalse(afterDry.run.burst.active)
+        assertTrue(afterDry.run.burst.heatLock > 0f)
+        val vibrations = afterDry.events.filterIsInstance<GameEvent.Vibrate>()
+        assertEquals("exactly one overheat haptic on the fuel-exhaustion frame", 1, vibrations.size)
+        assertTrue("overheat must be two distinct pulses, got ${vibrations[0].pattern}", isTwoDistinctPulses(vibrations[0].pattern))
+    }
+
+    @Test
+    fun burstVoluntaryReleaseHasNoHaptic() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f))
+        assertTrue(afterCross.run.burst.active)
+        val released = step(afterCross.run.copy(entities = emptyList(), spawnClock = 1_000f, throttle = 0.7f))
+        assertNull("run ended unexpectedly: ${released.outcome?.reason}", released.outcome)
+        assertFalse("lever release ends the burst", released.run.burst.active)
+        assertEquals("voluntary release still enters the heat lock", 7f, released.run.burst.heatLock, 0.001f)
+        assertFalse(
+            "voluntary release must not vibrate, got ${released.events.filterIsInstance<GameEvent.Vibrate>()}",
+            released.events.any { it is GameEvent.Vibrate }
+        )
+        assertTrue("voluntary release keeps the audio drop", released.events.any { it is GameEvent.Tone && it.freq == 100f })
+    }
+
+    @Test
+    fun burstIgnitionEmitsSingleShortPulse() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val ignition = step(start.copy(throttle = 0.9f))
+        assertTrue(ignition.run.burst.active)
+        val vibrations = ignition.events.filterIsInstance<GameEvent.Vibrate>()
+        assertEquals(1, vibrations.size)
+        assertEquals(listOf(0L, 30L), vibrations[0].pattern)
     }
 
     @Test

@@ -1412,12 +1412,17 @@ class GameSimulationTest {
     }
 
     /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */
-    private fun leverFrames(start: RunState, levers: List<Float>, onFrame: (RunState) -> Unit = {}): Pair<RunState, Int> {
+    private fun leverFrames(
+        start: RunState,
+        levers: List<Float>,
+        input: RunInput = RunInput(),
+        onFrame: (RunState) -> Unit = {}
+    ): Pair<RunState, Int> {
         var run = start
         var ignitions = 0
         for (lever in levers) {
             val wasActive = run.burst.active
-            val result = step(run.copy(throttle = lever))
+            val result = step(run.copy(throttle = lever), input)
             assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
             run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
             if (!wasActive && run.burst.active) ignitions++
@@ -1593,6 +1598,101 @@ class GameSimulationTest {
         assertEquals(1, chatterIgnitions)
         assertEquals(0, controlIgnitions)
         assertEquals(0.08f, chattered.detection - control.detection, 0.01f)
+    }
+
+    @Test
+    fun spintaFuelOutWithLeverHeldDoesNotRetrigger() {
+        val start = quietRun().copy(fuel = 12f, pursuitCooldown = 100f)
+        // Lever held at 0.9: one burst, heat lock, then the tank runs dry. Hold until both are spent.
+        var run = start
+        var ignitions = 0
+        var frames = 0
+        while (!(run.burst.heatLock <= 0f && run.fuel <= 0f) && frames < (20f / FRAME).toInt()) {
+            val (next, n) = leverFrames(run, listOf(0.9f))
+            run = next
+            ignitions += n
+            frames++
+        }
+        assertEquals("heat lock must expire", 0f, run.burst.heatLock, 0f)
+        assertEquals("tank must be dry", 0f, run.fuel, 0f)
+        val (dry, dryIgnitions) = leverFrames(run, List((1f / FRAME).toInt()) { 0.9f })
+        ignitions += dryIgnitions
+        // Fuel pickup with the lever never lowered: no second burst.
+        val (held, heldIgnitions) = leverFrames(dry.copy(fuel = 20f), List(30) { 0.9f })
+        ignitions += heldIgnitions
+        assertEquals("lever held through fuel-out and refuel must not re-ignite", 1, ignitions)
+        assertFalse(held.burst.active)
+        val elapsed = held.runElapsed - start.runElapsed
+        assertTrue("hull ${held.hull} must only carry dry-tank stress", held.hull >= start.hull - 2.3f * elapsed - 0.01f)
+        // Positive control: a real low-high crossing fires.
+        val (rearmed, rearmIgnitions) = leverFrames(held, listOf(0.7f, 0.9f))
+        assertEquals(1, rearmIgnitions)
+        assertTrue(rearmed.burst.active)
+    }
+
+    @Test
+    fun spintaCrossingBelowTwelveFuelIsConsumed() {
+        val start = quietRun().copy(fuel = 10f, pursuitCooldown = 100f, throttle = 0.5f)
+        // Crossing with fuel below 12: blocked, and the crossing is spent.
+        val (crossed, crossIgnitions) = leverFrames(start, List((2f / FRAME).toInt()) { 0.9f })
+        assertEquals(0, crossIgnitions)
+        // Refuel with the lever still held: no ignition.
+        val (held, heldIgnitions) = leverFrames(crossed.copy(fuel = 30f), List(30) { 0.9f })
+        assertEquals("a crossing blocked by low fuel must not fire after a refuel", 0, heldIgnitions)
+        assertFalse(held.burst.active)
+        // Lower and raise again: ignition.
+        val (rearmed, rearmIgnitions) = leverFrames(held, listOf(0.7f, 0.9f))
+        assertEquals(1, rearmIgnitions)
+        assertTrue(rearmed.burst.active)
+    }
+
+    @Test
+    fun spintaCrossingWhileSubmergedIsConsumed() {
+        val start = quietRun().copy(fuel = 100f, pursuitCooldown = 100f, throttle = 0.5f)
+        val dive = RunInput(diveHeld = true)
+        val (submerged, _) = leverFrames(start, List(30) { 0.5f }, dive)
+        assertTrue("boat must be submerged before the crossing", submerged.dive.submerged)
+        // Crossing while submerged: blocked, and the crossing is spent.
+        val (crossed, crossIgnitions) = leverFrames(submerged, List(10) { 0.9f }, dive)
+        assertEquals(0, crossIgnitions)
+        assertTrue("still submerged through the crossing", crossed.dive.submerged)
+        // Release dive with the lever held: the boat surfaces, no ignition.
+        val (surfaced, surfacedIgnitions) = leverFrames(crossed, List(30) { 0.9f })
+        assertFalse(surfaced.dive.submerged)
+        assertEquals("a crossing blocked by being submerged must not fire on surfacing", 0, surfacedIgnitions)
+        assertFalse(surfaced.burst.active)
+        // Re-cross: ignition.
+        val (rearmed, rearmIgnitions) = leverFrames(surfaced, listOf(0.7f, 0.9f))
+        assertEquals(1, rearmIgnitions)
+        assertTrue(rearmed.burst.active)
+    }
+
+    @Test
+    fun spintaLeverPushDuringRepairCancelsThenIgnites() {
+        val base = quietRun().copy(hull = 50f, fuel = 60f, pursuitCooldown = 100f, throttle = 0.2f)
+        val (started, _) = GameSimulation.startRepair(base)
+        assertTrue(started.repair.active)
+        val (mid, _) = leverFrames(started, List((1.2f / FRAME).toInt()) { 0.2f })
+        assertTrue("repair still running", mid.repair.active)
+        assertTrue("at least 1 s of repair progress", mid.repair.progress >= 1f)
+        // Frame 1 at burst lever: the repair is cancelled, nothing ignites, partial hull is kept.
+        val (first, firstIgnitions) = leverFrames(mid, listOf(0.9f))
+        assertFalse(first.repair.active)
+        assertFalse(first.burst.active)
+        assertEquals(0, firstIgnitions)
+        assertEquals(mid.hull, first.hull, 0.001f)
+        // Frame 2: the repair-blocked crossing was not consumed, the burst ignites.
+        val (second, secondIgnitions) = leverFrames(first, listOf(0.9f))
+        assertEquals(1, secondIgnitions)
+        assertTrue(second.burst.active)
+    }
+
+    @Test
+    fun newRunStartsWithLeverBelowTopBand() {
+        for (chapter in CHAPTERS.indices) {
+            val run = GameSimulation.newRun(chapter, progress)
+            assertTrue("chapter $chapter starts with lever ${run.throttle}", run.throttle <= 0.8f)
+        }
     }
 
     /** Twin runs differing only by lever (0.9 vs 0.5), empty sea, burst disarmed; heat lock as given. */

@@ -1780,9 +1780,11 @@ class GameSimulationTest {
             1e-5f
         )
 
-        // Control without heat lock: lever 0.9 is really boosting, so hiding decay drops to 0.02
-        // while lever 0.5 keeps 0.12. The decay gap alone is dt * 0.10 = 0.05; the accumulation gap
-        // (boost term + stealth) is below 0.01, so a difference above 0.04 is attributable to decay.
+        // Control without heat lock (Posky DC-2, 2026-10-16): lever 0.9 is capped at 0.8 and no longer
+        // boosts, so it keeps the hiding decay; the residual gap is the 0.8-vs-0.5 accumulation only:
+        // dt * ((0.035 * 0.48 + 0.06) * 0.172 - 0.035 * 0.48 * 0.13) ~ 0.0055 with the wreck's 0.2 stealth.
+        // Without hiding (stealth x5, decay 0.02 on both) the gap would be ~0.028, so the pin also
+        // proves the hiding predicate holds.
         val (freeHigh, freeHalf) = hidingLeverTwins(heatLock = 0f)
         val c = step(freeHigh, RunInput(), dt = 0.5f).run
         val d = step(freeHalf, RunInput(), dt = 0.5f).run
@@ -1790,8 +1792,14 @@ class GameSimulationTest {
         assertEquals(1, c.entities.count { it.type == EntityType.WRECK && it.z > 2f })
         assertEquals(freeHigh.hull, c.hull, 0.0001f)
         assertTrue(
-            "outside heat lock a boosting lever must lose the hiding decay (high=${c.detection}, half=${d.detection})",
-            c.detection - d.detection > 0.04f
+            "outside heat lock a lever above 0.8 keeps the hiding decay (high=${c.detection}, half=${d.detection})",
+            c.detection - d.detection in 0f..0.01f
+        )
+        assertEquals(
+            "hidden 0.8-vs-0.5 accumulation gap (high=${c.detection}, half=${d.detection})",
+            0.0055f,
+            c.detection - d.detection,
+            0.002f
         )
     }
 

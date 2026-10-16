@@ -226,10 +226,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         SynthAudioEngine.bedEnabled = inMission
         if (inMission) {
             val lever = if (run.fuel > 0f) run.throttle else 0f
-            // Heat lock clamps the engine to half lever, so the audio drops out of boost during lockout.
-            val throttle = if (run.burst.heatLock > 0f) min(lever, 0.5f) else lever
-            SynthAudioEngine.engineLevel = throttle
-            SynthAudioEngine.boosting = throttle > 0.8f
+            // Same effective lever as GameSimulation.step: half lever in heat lock (DC-1), otherwise
+            // capped at 0.8 (Posky DC-2, 2026-10-16). Only an active burst sounds as boosting.
+            SynthAudioEngine.engineLevel = if (run.burst.heatLock > 0f) min(lever, 0.5f) else min(lever, 0.8f)
+            SynthAudioEngine.boosting = run.burst.active
             SynthAudioEngine.detection = run.detection
             SynthAudioEngine.pursuers = run.activePursuers
             SynthAudioEngine.hullRatio = if (run.maxHull > 0f) run.hull / run.maxHull else 1f

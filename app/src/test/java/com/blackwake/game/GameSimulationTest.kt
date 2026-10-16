@@ -1376,6 +1376,46 @@ class GameSimulationTest {
         assertTrue("outside heat lock the high lever must cost more fuel", a.fuel < b.fuel)
     }
 
+    /** Lever twins hiding behind a wreck in the player's lane (z in 0..25, |dx| < 0.6), base detection 0.4. */
+    private fun hidingLeverTwins(heatLock: Float): Pair<RunState, RunState> {
+        val wreck = Entity(id = 1, type = EntityType.WRECK, lane = 1, x = 0f, z = 20f)
+        val (high, half) = leverTwins(heatLock = heatLock, playerX = 0f)
+        return high.copy(detection = 0.4f, entities = listOf(wreck)) to half.copy(detection = 0.4f, entities = listOf(wreck))
+    }
+
+    @Test
+    fun spintaHeatLockKeepsHidingDecay() {
+        val (high, half) = hidingLeverTwins(heatLock = 5f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(half, RunInput(), dt = 0.5f).run
+        assertFalse(a.burst.active)
+        assertTrue(a.burst.heatLock > 0f)
+        // The wreck is still ahead and was never hit: hiding held and nothing else touched detection.
+        assertEquals(1, a.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        assertEquals(1, b.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        assertEquals(high.hull, a.hull, 0.0001f)
+        assertEquals(
+            "lever 0.9 in heat lock must keep the hiding decay of lever 0.5",
+            b.detection,
+            a.detection,
+            1e-5f
+        )
+
+        // Control without heat lock: lever 0.9 is really boosting, so hiding decay drops to 0.02
+        // while lever 0.5 keeps 0.12. The decay gap alone is dt * 0.10 = 0.05; the accumulation gap
+        // (boost term + stealth) is below 0.01, so a difference above 0.04 is attributable to decay.
+        val (freeHigh, freeHalf) = hidingLeverTwins(heatLock = 0f)
+        val c = step(freeHigh, RunInput(), dt = 0.5f).run
+        val d = step(freeHalf, RunInput(), dt = 0.5f).run
+        assertFalse("disarmed latch must not fire", c.burst.active)
+        assertEquals(1, c.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        assertEquals(freeHigh.hull, c.hull, 0.0001f)
+        assertTrue(
+            "outside heat lock a boosting lever must lose the hiding decay (high=${c.detection}, half=${d.detection})",
+            c.detection - d.detection > 0.04f
+        )
+    }
+
     private companion object {
         const val FRAME = 1f / 60f
     }

@@ -511,9 +511,10 @@ object GameSimulation {
                 // Bounce back into pursuit instead of ramming through again.
                 next = next.copy(state = PursuerState.PURSUIT, stateTimer = 0f, attackTimer = 0f)
             }
-            if (newBurst.active && next.y < 110f) {
-                val extraY = 18f * dt
-                next = next.copy(y = min(next.y + extraY, 110f))
+            // Burst push-back: a guaranteed net 18/s against the pre-AI row, capped at 110. A ram in
+            // INTERCEPT (wind-up or charge) is exempt: it is answered only by steering or diving.
+            if (newBurst.active && next.state != PursuerState.INTERCEPT && next.y < 110f) {
+                next = next.copy(y = min(110f, max(next.y, p.y + 18f * dt)))
             }
             pursuers += next
         }

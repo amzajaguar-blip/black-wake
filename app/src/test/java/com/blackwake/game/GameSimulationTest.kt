@@ -899,6 +899,66 @@ class GameSimulationTest {
     }
 
     @Test
+    fun spintaDiveUnavailableDuringActiveBurst() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f, throttle = 0.9f)
+        val ignition = step(start)
+        assertNull("run ended unexpectedly: ${ignition.outcome?.reason}", ignition.outcome)
+        assertTrue(ignition.run.burst.active)
+        var run = ignition.run.copy(entities = emptyList(), spawnClock = 1_000f)
+        repeat(30) { frame ->
+            val previousOxygen = run.dive.oxygen
+            val result = step(run.copy(throttle = 0.9f), RunInput(diveHeld = true))
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            assertTrue("burst still active on frame $frame", run.burst.active)
+            assertFalse("dive must be unavailable during the burst (frame $frame)", run.dive.submerged)
+            assertTrue("oxygen must not be consumed during the burst (frame $frame): $previousOxygen -> ${run.dive.oxygen}", run.dive.oxygen >= previousOxygen)
+        }
+    }
+
+    @Test
+    fun spintaIgnitionFrameBlocksDive() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f, throttle = 0.9f)
+        val ignition = step(start, RunInput(diveHeld = true))
+        assertNull("run ended unexpectedly: ${ignition.outcome?.reason}", ignition.outcome)
+        assertTrue(ignition.run.burst.active)
+        assertFalse("dive held on the ignition frame must not submerge", ignition.run.dive.submerged)
+    }
+
+    @Test
+    fun spintaSubmergedBoatCannotIgnite() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f, throttle = 0.9f, dive = DiveState(submerged = true, oxygen = 80f))
+        val result = step(start, RunInput(diveHeld = true))
+        assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+        assertFalse("a submerged boat must not ignite the burst", result.run.burst.active)
+    }
+
+    @Test
+    fun spintaBurstEndWithDiveHeldIsNotOxygenExhaustion() {
+        var run = quietRun().copy(entities = emptyList(), fuel = 100f, throttle = 0.9f)
+        var ignited = false
+        var ended = false
+        var frames = 0
+        while (!ended && frames < 400) {
+            val before = run.copy(throttle = 0.9f)
+            val result = step(before, RunInput(diveHeld = true))
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            if (run.burst.active) ignited = true
+            if (ignited && before.burst.active && !run.burst.active) ended = true
+            frames++
+        }
+        assertTrue("burst must ignite on the first frame", ignited)
+        assertTrue("burst must end by its 2.5 s timer", ended)
+        assertTrue("timer end, not fuel exhaustion", run.fuel > 0f)
+        val afterEnd = step(run.copy(throttle = 0.9f), RunInput(diveHeld = true))
+        assertNull("run ended unexpectedly: ${afterEnd.outcome?.reason}", afterEnd.outcome)
+        val exhaustion = afterEnd.run.feed.filter { it.text == "OSSIGENO ESAURITO // EMERSIONE" }
+        assertTrue("burst end with dive held is not oxygen exhaustion, got $exhaustion", exhaustion.isEmpty())
+        assertFalse("burst end must not lock the dive out", afterEnd.run.dive.lockedOut)
+    }
+
+    @Test
     fun spintaHeatLockClampsCruiseToHalfLever() {
         val start = quietRun().copy(fuel = 100f)
         // Burst runs its full 2.5 s with the lever held at 0.9 and ends into heat lock.

@@ -78,7 +78,7 @@ object GameSimulation {
 
     fun launchFlare(run: RunState): Pair<RunState, List<GameEvent>> {
         val flare = run.flare
-        if (flare.charges <= 0 || flare.timer > 0f || run.dive.submerged) return run to emptyList()
+        if (flare.charges <= 0 || flare.timer > 0f || run.dive.submerged || run.burst.active) return run to emptyList()
         val launchLaneX = run.playerX
         val pursuers = run.pursuers
         var dazzledCount = 0

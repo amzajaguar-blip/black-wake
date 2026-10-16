@@ -268,9 +268,13 @@ private fun ActionPad(run: RunState, viewModel: GameViewModel, modifier: Modifie
             val flare = run.flare
             ActionButton(
                 title = "RAZZO",
-                detail = if (flare.timer > 0f) "ATTIVO" else "x${flare.charges}",
+                detail = when {
+                    run.burst.active -> "SPINTA"
+                    flare.timer > 0f -> "ATTIVO"
+                    else -> "x${flare.charges}"
+                },
                 color = Palette.Amber,
-                enabled = flare.charges > 0 && flare.timer <= 0f && !run.dive.submerged,
+                enabled = flare.charges > 0 && flare.timer <= 0f && !run.dive.submerged && !run.burst.active,
                 active = flare.timer > 0f,
                 onClick = viewModel::launchFlare
             )

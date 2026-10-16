@@ -1004,6 +1004,62 @@ class GameSimulationTest {
         assertTrue("voluntary release keeps the audio drop", released.events.any { it is GameEvent.Tone && it.freq == 100f })
     }
 
+    /** Asserts the end frame added exactly one burst-end entry to the feed, with the given text and tone. */
+    private fun assertSingleBurstEndMessage(before: RunState, after: RunState, text: String, tone: MessageTone) {
+        val burstEndBefore = before.feed.filter { it.text.startsWith("SPINTA") }
+        assertTrue("no burst-end message before the end frame, got $burstEndBefore", burstEndBefore.isEmpty())
+        val burstEndAfter = after.feed.filter { it.text.startsWith("SPINTA") }
+        assertEquals("exactly one burst-end message on the end frame, got $burstEndAfter", 1, burstEndAfter.size)
+        assertEquals(text, burstEndAfter[0].text)
+        assertEquals(tone, burstEndAfter[0].tone)
+    }
+
+    @Test
+    fun burstTimerEndShowsEngineHotCause() {
+        var run = quietRun().copy(entities = emptyList(), fuel = 30f, throttle = 0.9f)
+        var beforeEnd: RunState? = null
+        var afterEnd: RunState? = null
+        var frames = 0
+        while (afterEnd == null && frames < 400) {
+            val before = run.copy(throttle = 0.9f)
+            val result = step(before)
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            if (before.burst.active && !run.burst.active) {
+                beforeEnd = before
+                afterEnd = result.run
+            }
+            frames++
+        }
+        assertNotNull("burst must end by its 2.5 s timer", afterEnd)
+        assertTrue("timer end, not fuel exhaustion", afterEnd!!.fuel > 0f)
+        assertSingleBurstEndMessage(beforeEnd!!, afterEnd, "SPINTA ESAURITA // MOTORE CALDO", MessageTone.WARNING)
+    }
+
+    @Test
+    fun burstFuelExhaustionShowsFuelCause() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f))
+        assertTrue(afterCross.run.burst.active)
+        val before = afterCross.run.copy(entities = emptyList(), spawnClock = 1_000f, fuel = 0f)
+        val afterDry = step(before)
+        assertNull("run ended unexpectedly: ${afterDry.outcome?.reason}", afterDry.outcome)
+        assertFalse(afterDry.run.burst.active)
+        assertSingleBurstEndMessage(before, afterDry.run, "SPINTA INTERROTTA // CARBURANTE", MessageTone.WARNING)
+    }
+
+    @Test
+    fun burstVoluntaryReleaseShowsReleasedCause() {
+        val start = quietRun().copy(entities = emptyList(), fuel = 100f)
+        val afterCross = step(start.copy(throttle = 0.9f))
+        assertTrue(afterCross.run.burst.active)
+        val before = afterCross.run.copy(entities = emptyList(), spawnClock = 1_000f, throttle = 0.7f)
+        val released = step(before)
+        assertNull("run ended unexpectedly: ${released.outcome?.reason}", released.outcome)
+        assertFalse("lever release ends the burst", released.run.burst.active)
+        assertSingleBurstEndMessage(before, released.run, "SPINTA RILASCIATA", MessageTone.INFO)
+    }
+
     @Test
     fun burstIgnitionEmitsSingleShortPulse() {
         val start = quietRun().copy(entities = emptyList(), fuel = 100f)

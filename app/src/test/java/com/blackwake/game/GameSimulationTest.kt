@@ -1208,7 +1208,10 @@ class GameSimulationTest {
         // can never ignite, so the lever alone drives the speed.
         val start = quietRun().copy(burst = BurstState(armed = false))
         val run = simulate(start.copy(throttle = 1.0f), 2.0f, RunInput())
-        assertEquals(1.2f * boatSpec(progress.boat).speed, run.speedFactor, 0.1f)
+        // Posky DC-2, 2026-10-16: no continuous top band, the ordinary lever is capped at 0.8,
+        // so lever 1.0 cruises at (0.8 + 0.8 * 0.4) = 1.12x. The tolerance is tightened from 0.1
+        // to 0.01 because the old one could not tell 1.12x from 1.2x.
+        assertEquals((0.8f + 0.8f * 0.4f) * boatSpec(progress.boat).speed, run.speedFactor, 0.01f)
     }
 
     @Test
@@ -1696,8 +1699,8 @@ class GameSimulationTest {
         }
     }
 
-    /** Twin runs differing only by lever (0.9 vs 0.5), empty sea, burst disarmed; heat lock as given. */
-    private fun leverTwins(heatLock: Float, playerX: Float = 0f): Pair<RunState, RunState> {
+    /** Twin runs differing only by lever (0.9 vs [low], default 0.5), empty sea, burst disarmed; heat lock as given. */
+    private fun leverTwins(heatLock: Float, playerX: Float = 0f, low: Float = 0.5f): Pair<RunState, RunState> {
         val base = quietRun().copy(
             fuel = 100f,
             detection = 0.3f,
@@ -1707,7 +1710,7 @@ class GameSimulationTest {
             pursuers = emptyList(),
             playerX = playerX
         )
-        return base.copy(throttle = 0.9f) to base.copy(throttle = 0.5f)
+        return base.copy(throttle = 0.9f) to base.copy(throttle = low)
     }
 
     @Test
@@ -1744,6 +1747,7 @@ class GameSimulationTest {
 
     @Test
     fun leverStillPricedOutsideHeatLock() {
+        // Posky DC-2, 2026-10-16: lever 0.9 is capped to 0.8 outside a burst; 0.8 still burns more than 0.5.
         val (high, half) = leverTwins(heatLock = 0f)
         val a = step(high, RunInput(), dt = 0.5f).run
         val b = step(half, RunInput(), dt = 0.5f).run
@@ -1789,6 +1793,68 @@ class GameSimulationTest {
             "outside heat lock a boosting lever must lose the hiding decay (high=${c.detection}, half=${d.detection})",
             c.detection - d.detection > 0.04f
         )
+    }
+
+    // Posky DC-2, 2026-10-16: no continuous top band. Without an active burst a lever above 0.8
+    // behaves exactly like lever 0.8 (twins: lever 0.9 vs 0.8, disarmed, no heat lock, empty sea).
+
+    @Test
+    fun topBandWithoutBurstBurnsFuelLikePointEight() {
+        val (high, cap) = leverTwins(heatLock = 0f, low = 0.8f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(cap, RunInput(), dt = 0.5f).run
+        assertFalse("disarmed latch must not fire", a.burst.active)
+        assertEquals("lever 0.9 without a burst must burn fuel like lever 0.8", b.fuel, a.fuel, 1e-4f)
+    }
+
+    @Test
+    fun topBandWithoutBurstSignatureLikePointEight() {
+        val (high, cap) = leverTwins(heatLock = 0f, low = 0.8f)
+        val a = step(high, RunInput(), dt = 0.5f).run
+        val b = step(cap, RunInput(), dt = 0.5f).run
+        assertFalse("disarmed latch must not fire", a.burst.active)
+        assertEquals("lever 0.9 without a burst must leave the signature of lever 0.8", b.detection, a.detection, 1e-5f)
+    }
+
+    @Test
+    fun topBandWithoutBurstSpeedLikePointEight() {
+        val (high, cap) = leverTwins(heatLock = 0f, low = 0.8f)
+        val a = simulate(high, 2.0f)
+        val b = simulate(cap, 2.0f)
+        assertFalse("disarmed latch must not fire", a.burst.active)
+        assertEquals("lever 0.9 without a burst must cruise like lever 0.8", b.speedFactor, a.speedFactor, 1e-3f)
+    }
+
+    @Test
+    fun topBandWithoutBurstLaneMagnetLikePointEight() {
+        var (a, b) = leverTwins(heatLock = 0f, playerX = 0.3f, low = 0.8f)
+        repeat(20) {
+            a = step(a, RunInput()).run.copy(entities = emptyList(), spawnClock = 1_000f)
+            b = step(b, RunInput()).run.copy(entities = emptyList(), spawnClock = 1_000f)
+        }
+        assertFalse("disarmed latch must not fire", a.burst.active)
+        assertEquals("lever 0.9 without a burst must snap to lanes like lever 0.8", b.playerX, a.playerX, 1e-4f)
+    }
+
+    @Test
+    fun burstOrdinaryLeverCappedAtPointEight() {
+        // GATE-DC2-BURST = (i): during an active burst the ordinary lever is capped at 0.8 too, so the
+        // burst is the 0.8 cruise plus its own deltas, and lever 1.0 and lever 0.81 are indistinguishable.
+        val base = quietRun().copy(
+            fuel = 100f,
+            detection = 0.3f,
+            pursuitCooldown = 100f,
+            burst = BurstState(active = true, timer = 0f, armed = false),
+            entities = emptyList(),
+            pursuers = emptyList(),
+            playerX = 0.3f
+        )
+        val full = step(base.copy(throttle = 1.0f)).run
+        val low = step(base.copy(throttle = 0.81f)).run
+        assertTrue(full.burst.active)
+        assertTrue(low.burst.active)
+        assertEquals("burst signature must not depend on the lever above 0.8", low.detection, full.detection, 1e-5f)
+        assertEquals("burst lane magnet must not depend on the lever above 0.8", low.playerX, full.playerX, 1e-4f)
     }
 
     private companion object {

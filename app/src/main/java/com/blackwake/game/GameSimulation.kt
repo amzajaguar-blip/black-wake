@@ -335,7 +335,7 @@ object GameSimulation {
 
         // --- Dive
         val prevDive = prev.dive
-        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f)) && newBurst.diveLock <= 0f && !prev.repair.active
+        val canDive = !prevDive.lockedOut && (prevDive.oxygen >= 15f || (prevDive.submerged && prevDive.oxygen > 0f)) && newBurst.diveLock <= 0f && !newBurst.active && !prev.repair.active
         val wantsDive = input.diveHeld && canDive
         val oxygen = if (wantsDive) max(0f, prevDive.oxygen - dt * 25f)
         else min(100f, prevDive.oxygen + dt * 15f)

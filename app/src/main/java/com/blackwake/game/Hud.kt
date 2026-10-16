@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -339,7 +340,7 @@ private fun ActionButton(
 
 @Composable
 private fun DiveButton(run: RunState, viewModel: GameViewModel) {
-    val diveLockActive = run.burst.diveLock > 0f
+    val diveLockActive = run.burst.active || run.burst.diveLock > 0f
     if (diveLockActive) {
         Box(
             Modifier
@@ -349,7 +350,9 @@ private fun DiveButton(run: RunState, viewModel: GameViewModel) {
                 .semantics { contentDescription = "Immergi bloccato" }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Label("BLOCCO ${(run.burst.diveLock).toInt()}s", Palette.Text, 9.sp)
+                // During the burst: upper bound on remaining burst + 2 s dive lock; it only goes down and drops to 2 on release.
+                val lockSeconds = if (run.burst.active) ceil((2.5f - run.burst.timer) + 2f) else ceil(run.burst.diveLock)
+                Label("BLOCCO ${lockSeconds.toInt()}s", Palette.Text, 9.sp)
             }
         }
     } else {

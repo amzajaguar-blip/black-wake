@@ -1633,9 +1633,10 @@ class GameSimulationTest {
     @Test
     fun spintaCrossingBelowTwelveFuelIsConsumed() {
         val start = quietRun().copy(fuel = 10f, pursuitCooldown = 100f, throttle = 0.5f)
-        // Crossing with fuel below 12: blocked, and the crossing is spent.
-        val (crossed, crossIgnitions) = leverFrames(start, List((2f / FRAME).toInt()) { 0.9f })
+        // Crossing with fuel below 12 (but not dry): blocked, and the crossing is spent.
+        val (crossed, crossIgnitions) = leverFrames(start, List(30) { 0.9f })
         assertEquals(0, crossIgnitions)
+        assertTrue("tank must not be dry at the refuel (fuel ${crossed.fuel})", crossed.fuel > 0f)
         // Refuel with the lever still held: no ignition.
         val (held, heldIgnitions) = leverFrames(crossed.copy(fuel = 30f), List(30) { 0.9f })
         assertEquals("a crossing blocked by low fuel must not fire after a refuel", 0, heldIgnitions)

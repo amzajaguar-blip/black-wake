@@ -274,9 +274,16 @@ object GameSimulation {
             newBurst = newBurst.copy(diveLock = max(0f, newBurst.diveLock - dt))
         }
 
-        // Re-arm: the latch arms only when the lever is low AND the heat lock has expired
-        if (throttle <= 0.8f && newBurst.heatLock <= 0f) {
+        // Re-arm: the latch arms only when the raw lever is low AND the heat lock has expired.
+        // The raw lever is used so that a dry tank (which forces the engine throttle to 0) does not re-arm.
+        if (prev.throttle <= 0.8f && newBurst.heatLock <= 0f) {
             newBurst = newBurst.copy(armed = true)
+        }
+
+        // Consume: a crossing blocked by low fuel or by being submerged is spent; the lever must be
+        // lowered and raised again. A crossing blocked only by an active repair is kept.
+        if (newBurst.armed && prev.throttle > 0.8f && newBurst.heatLock <= 0f && !newBurst.active && (prev.fuel < 12f || currentlySubmerged)) {
+            newBurst = newBurst.copy(armed = false)
         }
 
         // Fire (single burst): when armed, lever high, not submerged, heat lock ready, enough fuel, and not already active

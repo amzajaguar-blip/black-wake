@@ -1984,6 +1984,9 @@ class GameSimulationTest {
         assertFalse(control.burst.active)
         assertEquals(1, burst.entities.count { it.type == EntityType.WRECK && it.z > 2f })
         assertEquals(1, control.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        // Hiding must be active: net -0.00178 per frame with it, +0.000767 without it.
+        assertTrue("control must decay while hiding (detection ${control.detection})", control.detection < 0.4f)
+        assertTrue("burst must decay while hiding (detection ${burst.detection})", burst.detection < 0.4f + 0.12f * FRAME)
         assertEquals("burst while hiding costs only its active 0.12/s", 0.12f * FRAME, burst.detection - control.detection, 1e-5f)
     }
 
@@ -2044,7 +2047,7 @@ class GameSimulationTest {
         assertTrue(pingedAfter.burst.active)
         assertTrue(quietAfter.burst.active)
         assertTrue(pingedAfter.sonar.active)
-        assertEquals("sonar and burst costs stack after one frame", 0.12f, pingedAfter.detection - quietAfter.detection, 0.002f)
+        assertEquals("sonar and burst costs stack after one frame", 0.12f, pingedAfter.detection - quietAfter.detection, 1e-4f)
     }
 
     /** Racing boat (speed 1.12, fuelUse 1.05; GameData.kt:196), chapter 1, full tank, lever 0.9, quiet sea. */

@@ -629,8 +629,8 @@ class GameSimulationTest {
 
     @Test
     fun flareAffectsOnlyPursuersWithinReach() {
-        val pursuerClose = Pursuer(id = 1, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT) // y=70, playerY=85 -> diff=15 <=55
-        val pursuerFar = Pursuer(id = 2, type = EnemyBoatType.PATROL, x = 0f, y = 200f, state = PursuerState.PURSUIT) // diff=115 >55
+        val pursuerClose = Pursuer(id = 1, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.PURSUIT) // y=70, playerY=85 -> diff=15 <=25
+        val pursuerFar = Pursuer(id = 2, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.SPAWN_Y, state = PursuerState.PURSUIT) // y=118 -> diff=33 >25
         val run = quietRun().copy(pursuers = listOf(pursuerClose, pursuerFar))
         val (newRun, _) = GameSimulation.launchFlare(run)
         val close = newRun.pursuers.first { it.id == 1 }
@@ -641,6 +641,21 @@ class GameSimulationTest {
         // Far pursuer should be unaffected
         assertEquals(PursuerState.PURSUIT, far.state)
         assertEquals(0.0f, far.flareGrace, 0.001f)
+    }
+
+    @Test
+    fun flareReachBoundary() {
+        val reach = 25f
+        val inside = Pursuer(id = 1, type = EnemyBoatType.PATROL, x = 0f, y = GameSimulation.PLAYER_Y + reach - 0.5f, state = PursuerState.PURSUIT) // diff=24.5 <=25
+        val outside = Pursuer(id = 2, type = EnemyBoatType.PATROL, x = 0f, y = GameSimulation.PLAYER_Y + reach + 0.5f, state = PursuerState.PURSUIT) // diff=25.5 >25
+        val run = quietRun().copy(pursuers = listOf(inside, outside))
+        val (newRun, _) = GameSimulation.launchFlare(run)
+        val insideAfter = newRun.pursuers.first { it.id == 1 }
+        val outsideAfter = newRun.pursuers.first { it.id == 2 }
+        assertEquals(PursuerState.SEARCH, insideAfter.state)
+        assertEquals(2.0f, insideAfter.flareGrace, 0.001f)
+        assertEquals(PursuerState.PURSUIT, outsideAfter.state)
+        assertEquals(0.0f, outsideAfter.flareGrace, 0.001f)
     }
 
     @Test

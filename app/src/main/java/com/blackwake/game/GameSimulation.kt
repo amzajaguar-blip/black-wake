@@ -1,9 +1,11 @@
 package com.blackwake.game
 
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlin.random.Random
 
@@ -39,19 +41,19 @@ object GameSimulation {
     private const val MESSAGE_SECONDS = 1.8f
     private const val RADIO_SECONDS = 5.5f
     /** SPINTA: raw lever level above which a burst can fire; at or below it the latch re-arms and an active burst ends. */
-    private const val BURST_LEVER_THRESHOLD = 0.8f
+    internal const val BURST_LEVER_THRESHOLD = 0.8f
     /** SPINTA: minimum fuel needed to ignite a burst; a crossing below it is consumed. */
-    private const val BURST_MIN_FUEL = 12f
+    internal const val BURST_MIN_FUEL = 12f
     /** SPINTA: maximum burst length before the forced overheat. */
-    private const val BURST_DURATION_SECONDS = 2.5f
+    internal const val BURST_DURATION_SECONDS = 2.5f
     /** SPINTA: heat lock applied on every burst end. */
     private const val BURST_HEAT_LOCK_SECONDS = 7f
     /** SPINTA: dive lock applied on every burst end. */
-    private const val BURST_DIVE_LOCK_SECONDS = 2f
+    internal const val BURST_DIVE_LOCK_SECONDS = 2f
     /** DC-1: effective lever clamp while the heat lock is running. */
-    private const val HEAT_LOCK_LEVER_CLAMP = 0.5f
+    internal const val HEAT_LOCK_LEVER_CLAMP = 0.5f
     /** DC-2: cap on the ordinary effective lever, also during a burst. */
-    private const val LEVER_CAP = 0.8f
+    internal const val LEVER_CAP = 0.8f
     /** SPINTA: speed multiplier (times boat speed) while a burst is active. */
     private const val BURST_SPEED_FACTOR = 1.70f
     /** SPINTA: one-off detection cost on the ignition frame. */
@@ -84,6 +86,32 @@ object GameSimulation {
     fun sonarCooldownSeconds(modules: Modules): Float = (6f - modules.radar.coerceAtMost(2)).coerceAtLeast(4f)
 
     fun bankedIntel(won: Boolean, intel: Int): Int = if (won) intel else (intel * 0.4f).toInt()
+
+    /**
+     * Effective lever from the fuel-gated lever: [HEAT_LOCK_LEVER_CLAMP] while the heat lock runs (DC-1),
+     * otherwise capped at [LEVER_CAP] (DC-2). Shared by [step] and the engine audio so they agree.
+     */
+    internal fun effectiveLever(lever: Float, heatLock: Float): Float =
+        if (heatLock > 0f) min(lever, HEAT_LOCK_LEVER_CLAMP) else min(lever, LEVER_CAP)
+
+    /**
+     * Burst time left ([BURST_DURATION_SECONDS] − timer), rounded up to 0.1 s and clamped to
+     * 0.1..[BURST_DURATION_SECONDS] so it never reads 0.0 while the burst is active. Built from integer
+     * tenths, so the decimal separator is always a dot.
+     */
+    internal fun burstCountdownLabel(timer: Float): String {
+        val maxTenths = (BURST_DURATION_SECONDS * 10f).roundToInt()
+        val tenths = ceil((BURST_DURATION_SECONDS - timer) * 10f).toInt().coerceIn(1, maxTenths)
+        return "${tenths / 10}.${tenths % 10}"
+    }
+
+    /**
+     * Whole seconds shown on the locked dive button. During the burst: upper bound on the remaining burst
+     * plus [BURST_DIVE_LOCK_SECONDS]; it only goes down and drops to the dive lock on release.
+     */
+    internal fun diveLockLabelSeconds(burst: BurstState): Int =
+        if (burst.active) ceil((BURST_DURATION_SECONDS - burst.timer) + BURST_DIVE_LOCK_SECONDS).toInt()
+        else ceil(burst.diveLock).toInt()
 
     fun newRun(chapterIndex: Int, progress: Progress): RunState {
         val chapter = CHAPTERS[chapterIndex]
@@ -384,7 +412,7 @@ object GameSimulation {
         // --- Effective lever: heat lock clamps to half lever at any lever value (DC-1); otherwise the
         // ordinary lever is capped at 0.8, also during a burst (Posky DC-2, 2026-10-16; GATE-DC2-BURST = i).
         // The raw lever still drives the burst latch, ignition, burst end and the repair cancel.
-        val lever = if (newBurst.heatLock > 0f) min(throttle, HEAT_LOCK_LEVER_CLAMP) else min(throttle, LEVER_CAP)
+        val lever = effectiveLever(throttle, newBurst.heatLock)
 
         // --- Speed: lever, vessel
         val targetSpeed = when {

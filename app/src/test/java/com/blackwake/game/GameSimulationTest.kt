@@ -2079,6 +2079,24 @@ class GameSimulationTest {
         assertEquals("one engine tone on ignition", 1, ignition.events.count { it is GameEvent.Tone && it.freq == 200f })
     }
 
+    @Test
+    fun burstUiHelpersMatchSimulationRules() {
+        assertEquals("full burst", "2.5", GameSimulation.burstCountdownLabel(0f))
+        assertEquals("1 s in", "1.5", GameSimulation.burstCountdownLabel(1.0f))
+        assertEquals("last tenth rounds up", "0.1", GameSimulation.burstCountdownLabel(2.45f))
+        assertEquals("never reads 0.0", "0.1", GameSimulation.burstCountdownLabel(2.5f))
+
+        assertEquals("burst start: 2.5 + 2", 5, GameSimulation.diveLockLabelSeconds(BurstState(active = true, timer = 0f)))
+        assertEquals("near burst end: ceil(2.05)", 3, GameSimulation.diveLockLabelSeconds(BurstState(active = true, timer = 2.45f)))
+        assertEquals("after release: ceil(dive lock)", 2, GameSimulation.diveLockLabelSeconds(BurstState(diveLock = 1.2f)))
+        assertEquals("no lock", 0, GameSimulation.diveLockLabelSeconds(BurstState()))
+
+        assertEquals("ordinary cap", 0.8f, GameSimulation.effectiveLever(0.9f, 0f), 0f)
+        assertEquals("below the cap", 0.7f, GameSimulation.effectiveLever(0.7f, 0f), 0f)
+        assertEquals("heat lock clamp", 0.5f, GameSimulation.effectiveLever(0.9f, 1f), 0f)
+        assertEquals("below the clamp", 0.3f, GameSimulation.effectiveLever(0.3f, 1f), 0f)
+    }
+
     private companion object {
         const val FRAME = 1f / 60f
     }

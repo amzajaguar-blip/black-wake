@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.min
 import kotlin.random.Random
 
 /**
@@ -226,9 +225,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         SynthAudioEngine.bedEnabled = inMission
         if (inMission) {
             val lever = if (run.fuel > 0f) run.throttle else 0f
-            // Same effective lever as GameSimulation.step: half lever in heat lock (DC-1), otherwise
-            // capped at 0.8 (Posky DC-2, 2026-10-16). Only an active burst sounds as boosting.
-            SynthAudioEngine.engineLevel = if (run.burst.heatLock > 0f) min(lever, 0.5f) else min(lever, 0.8f)
+            // Same effective lever as GameSimulation.step: GameSimulation.HEAT_LOCK_LEVER_CLAMP in heat lock
+            // (DC-1), otherwise capped at GameSimulation.LEVER_CAP (Posky DC-2, 2026-10-16). Only an active
+            // burst sounds as boosting.
+            SynthAudioEngine.engineLevel = GameSimulation.effectiveLever(lever, run.burst.heatLock)
             SynthAudioEngine.boosting = run.burst.active
             SynthAudioEngine.detection = run.detection
             SynthAudioEngine.pursuers = run.activePursuers

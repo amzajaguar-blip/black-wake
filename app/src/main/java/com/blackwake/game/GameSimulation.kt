@@ -84,7 +84,7 @@ object GameSimulation {
     internal const val REPAIR_HULL = 18f
     /** RIPARA: detection cost per second while repairing. */
     internal const val REPAIR_DETECTION_PER_SECOND = 0.06f
-    /** RIPARA: effective lever the speed uses while repairing. */
+    /** RIPARA: effective lever while repairing (speed, fuel, stealth, boost accumulation; GATE-R1 = b). */
     internal const val REPAIR_EFFECTIVE_LEVER = 0.2f
     /** Burst ignition haptic: one short pulse. */
     private val HAPTIC_IGNITION = listOf(0L, 30L)
@@ -107,10 +107,14 @@ object GameSimulation {
 
     /**
      * Effective lever from the fuel-gated lever: [HEAT_LOCK_LEVER_CLAMP] while the heat lock runs (DC-1),
-     * otherwise capped at [LEVER_CAP] (DC-2). Shared by [step] and the engine audio so they agree.
+     * [REPAIR_EFFECTIVE_LEVER] while a repair is active (Posky GATE-R1 = b, 2026-10-17), otherwise capped at
+     * [LEVER_CAP] (DC-2). Shared by [step] and the engine audio so they agree.
      */
-    internal fun effectiveLever(lever: Float, heatLock: Float): Float =
-        if (heatLock > 0f) min(lever, HEAT_LOCK_LEVER_CLAMP) else min(lever, LEVER_CAP)
+    internal fun effectiveLever(lever: Float, heatLock: Float, repairActive: Boolean = false): Float = when {
+        heatLock > 0f -> min(lever, HEAT_LOCK_LEVER_CLAMP)
+        repairActive -> REPAIR_EFFECTIVE_LEVER
+        else -> min(lever, LEVER_CAP)
+    }
 
     /**
      * Burst time left ([BURST_DURATION_SECONDS] − timer), rounded up to 0.1 s and clamped to
@@ -439,8 +443,9 @@ object GameSimulation {
 
         // --- Effective lever: heat lock clamps to half lever at any lever value (DC-1); otherwise the
         // ordinary lever is capped at 0.8, also during a burst (Posky DC-2, 2026-10-16; GATE-DC2-BURST = i).
+        // During a repair it is locked to REPAIR_EFFECTIVE_LEVER (Posky GATE-R1 = b); silent stays on the raw lever.
         // The raw lever still drives the burst latch, ignition, burst end and the repair cancel.
-        val lever = effectiveLever(throttle, newBurst.heatLock)
+        val lever = effectiveLever(throttle, newBurst.heatLock, prev.repair.active)
 
         // --- Speed: lever, vessel
         val targetSpeed = when {

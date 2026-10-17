@@ -226,9 +226,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (inMission) {
             val lever = if (run.fuel > 0f) run.throttle else 0f
             // Same effective lever as GameSimulation.step: GameSimulation.HEAT_LOCK_LEVER_CLAMP in heat lock
-            // (DC-1), otherwise capped at GameSimulation.LEVER_CAP (Posky DC-2, 2026-10-16). Only an active
-            // burst sounds as boosting.
-            SynthAudioEngine.engineLevel = GameSimulation.effectiveLever(lever, run.burst.heatLock)
+            // (DC-1), GameSimulation.REPAIR_EFFECTIVE_LEVER during a repair (GATE-R1 = b), otherwise capped at
+            // GameSimulation.LEVER_CAP (Posky DC-2, 2026-10-16). Only an active burst sounds as boosting.
+            SynthAudioEngine.engineLevel = GameSimulation.effectiveLever(lever, run.burst.heatLock, run.repair.active)
             SynthAudioEngine.boosting = run.burst.active
             SynthAudioEngine.detection = run.detection
             SynthAudioEngine.pursuers = run.activePursuers

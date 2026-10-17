@@ -1630,6 +1630,62 @@ class GameSimulationTest {
         )
     }
 
+    @Test
+    fun repairCompletionMessageReportsActualCappedHeal() {
+        // Spec §4: the hull bar shows the amount actually repaired; §6: UI and simulation agree. 88 -> 100 heals 12.
+        val base = quietRun()
+        val start = base.copy(hull = base.maxHull - 12f, fuel = 60f, throttle = 0.2f, pursuitCooldown = 100f)
+        val (repairing, _) = GameSimulation.startRepair(start)
+        assertTrue(repairing.repair.active)
+        var run = repairing
+        var frames = 0
+        while (run.repair.active && frames < 400) {
+            val result = step(run)
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            frames++
+        }
+        assertFalse("repair never completed", run.repair.active)
+        assertEquals(run.maxHull, run.hull, 0.001f)
+        assertEquals(
+            "one completion message with the capped heal, feed ${run.feed.map { it.text }}",
+            1,
+            run.feed.count { it.text == "SCAFO RIPRISTINATO // +12" }
+        )
+        assertFalse("no +18 for a capped heal", run.feed.any { it.text.contains("+18") })
+    }
+
+    /** Repair twin (started at lever 0.2) and its control with the repair switched off; empty sea, no spawns. */
+    private fun repairDetectionTwins(repairOverride: RepairState? = null): Pair<RunState, RunState> {
+        val start = quietRun().copy(
+            hull = 50f, fuel = 60f, throttle = 0.2f, detection = 0.3f, pursuitCooldown = 100f,
+            entities = emptyList(), pursuers = emptyList()
+        )
+        val (started, _) = GameSimulation.startRepair(start)
+        assertTrue(started.repair.active)
+        val repairing = if (repairOverride != null) started.copy(repair = repairOverride) else started
+        return repairing to repairing.copy(repair = repairing.repair.copy(active = false))
+    }
+
+    @Test
+    fun repairAddsSixHundredthsDetectionPerSecond() {
+        // Raw lever 0.2 is not silent; the effective lever (0.2) and speed (0.88x) match in both twins.
+        val (repairing, control) = repairDetectionTwins()
+        val repairRun = GameSimulation.step(repairing, 1, progress, RunInput(), 0.5f, Random(1234)).run
+        val controlRun = GameSimulation.step(control, 1, progress, RunInput(), 0.5f, Random(1234)).run
+        assertTrue("repair still active", repairRun.repair.active)
+        assertEquals("repair detection surcharge", 0.06f * 0.5f, repairRun.detection - controlRun.detection, 1e-5f)
+    }
+
+    @Test
+    fun repairCompletionFrameAddsNoSurcharge() {
+        val (repairing, control) = repairDetectionTwins(RepairState(kits = 1, active = true, progress = 2.5f))
+        val repairRun = GameSimulation.step(repairing, 1, progress, RunInput(), 0.5f, Random(1234)).run
+        val controlRun = GameSimulation.step(control, 1, progress, RunInput(), 0.5f, Random(1234)).run
+        assertFalse("repair completed this frame", repairRun.repair.active)
+        assertEquals("no surcharge on the completion frame", 0f, repairRun.detection - controlRun.detection, 1e-5f)
+    }
+
     /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */
     private fun leverFrames(
         start: RunState,

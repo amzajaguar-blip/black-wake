@@ -1531,6 +1531,47 @@ class GameSimulationTest {
         assertEquals(0, GameSimulation.repairLockSeconds(RepairState(active = false, progress = 0f)))
     }
 
+    /**
+     * One 0.5 s step during an active repair at the given raw lever (started at 0.2, so it is never cancelled
+     * at lever <= 0.3). Empty sea, no pursuers and a fresh Random, so the twins differ only by the lever.
+     */
+    private fun repairTwinStep(lever: Float, detection: Float = 0.3f): RunState {
+        val start = quietRun().copy(hull = 50f, fuel = 60f, throttle = 0.2f, detection = detection, entities = emptyList(), pursuers = emptyList())
+        val (repairing, _) = GameSimulation.startRepair(start)
+        assertTrue(repairing.repair.active)
+        val after = GameSimulation.step(repairing.copy(throttle = lever), 1, progress, RunInput(), 0.5f, Random(1234)).run
+        assertTrue("repair still active at lever $lever", after.repair.active)
+        return after
+    }
+
+    @Test
+    fun repairLocksEffectiveLeverForFuel() {
+        // Fuel uses only the effective lever (not silent), so 0.0 and 0.3 must burn alike at the locked 0.2.
+        val low = repairTwinStep(0.0f)
+        val high = repairTwinStep(0.3f)
+        assertEquals("fuel during repair uses the locked lever", low.fuel, high.fuel, 1e-4f)
+    }
+
+    @Test
+    fun repairLocksEffectiveLeverForSignature() {
+        // Both levers are non-silent (>= 0.2), so only stealth and boost accumulation could differ.
+        val low = repairTwinStep(0.25f)
+        val high = repairTwinStep(0.3f)
+        assertEquals("detection during repair uses the locked lever", low.detection, high.detection, 1e-5f)
+    }
+
+    @Test
+    fun repairKeepsSilentDecayOnRawLever() {
+        // GATE-R1 = (b): silent stays on the raw lever, so a raw 0.1 keeps the quiet decay bonus during a repair.
+        val silentRun = repairTwinStep(0.1f, detection = 0.5f)
+        val loudRun = repairTwinStep(0.2f, detection = 0.5f)
+        val quietDecayBonus = 0.5f * ((0.16f + progress.modules.stealth * 0.04f) - 0.02f)
+        assertTrue(
+            "silent decay kept at raw lever 0.1: gap ${loudRun.detection - silentRun.detection} >= $quietDecayBonus",
+            loudRun.detection - silentRun.detection >= quietDecayBonus - 1e-5f
+        )
+    }
+
     /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */
     private fun leverFrames(
         start: RunState,

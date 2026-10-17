@@ -1456,8 +1456,11 @@ class GameSimulationTest {
         }
     }
 
+    // The real pause guarantee is outside the pure simulation: GameViewModel.frame returns early unless the
+    // mode is RUNNING (GameViewModel.kt:54), and the frame loop only feeds clamped dt into it
+    // (BlackWakeApp.kt:55-61). This test pins only that repair progress is a function of summed sim time.
     @Test
-    fun repairPauseFreezesProgress() {
+    fun repairProgressAdvancesOnlyWithSimulationTime() {
         val start = quietRun().copy(hull = 50f, fuel = 60f, throttle = 0.2f)
         val (runAfterStart, _) = GameSimulation.startRepair(start)
         assertTrue(runAfterStart.repair.active)
@@ -1493,6 +1496,39 @@ class GameSimulationTest {
         assertFalse(end.run.repair.active)
         assertEquals(1, end.run.repair.kits)
         assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // SENZA CARBURANTE" })
+    }
+
+    @Test
+    fun repairBlockReasonAgreesWithStartRepair() {
+        val base = quietRun().copy(hull = 50f, fuel = 60f, throttle = 0.2f)
+        val cases = listOf(
+            base.copy(dive = DiveState(submerged = true)) to "IMMERSO",
+            base.copy(hull = 95f) to "SCAFO INTEGRO",
+            base.copy(fuel = 14.9f) to "CARBURANTE",
+            base.copy(throttle = 0.4f) to "TROPPO VELOCE",
+            base.copy(burst = BurstState(active = true)) to "MOTORE CALDO",
+            base.copy(burst = BurstState(heatLock = 1f)) to "MOTORE CALDO",
+            base.copy(invulnerable = 1f) to "IMPATTO",
+            base.copy(repair = RepairState(active = true)) to "IN CORSO",
+            base.copy(repair = RepairState(kits = 0)) to "x0",
+            base to null,
+            base.copy(hull = base.maxHull - 10f) to null,
+            base.copy(fuel = 15f) to null,
+            base.copy(throttle = 0.3f) to null
+        )
+        for ((testCase, label) in cases) {
+            val reason = GameSimulation.repairBlockReason(testCase)
+            val started = GameSimulation.startRepair(testCase).first != testCase
+            assertEquals(reason == null, started)
+            assertEquals(label, reason)
+        }
+    }
+
+    @Test
+    fun repairDiveLockLabelSeconds() {
+        assertEquals(3, GameSimulation.repairLockSeconds(RepairState(active = true, progress = 0f)))
+        assertEquals(1, GameSimulation.repairLockSeconds(RepairState(active = true, progress = 2.95f)))
+        assertEquals(0, GameSimulation.repairLockSeconds(RepairState(active = false, progress = 0f)))
     }
 
     /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */

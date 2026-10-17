@@ -36,6 +36,8 @@ object GameSimulation {
     const val NEAR_MISS = 0.55f
     const val RAM_HIT = 0.25f
     const val FLARE_SECONDS = 5f
+    /** Flare reach: max |y - PLAYER_Y| (track units) a pursuer can be at and still be dazzled. */
+    const val FLARE_REACH = 25f
     const val MAX_FEED = 60
     private const val PING_SPEED = 80f
     private const val MESSAGE_SECONDS = 1.8f
@@ -146,8 +148,8 @@ object GameSimulation {
                 newPursuers.add(p)
                 continue
             }
-            // Check reach: within 55 track units of player's row
-            if (Math.abs(p.y - PLAYER_Y) > 55f) {
+            // Check reach: within FLARE_REACH track units of player's row
+            if (Math.abs(p.y - PLAYER_Y) > FLARE_REACH) {
                 newPursuers.add(p)
                 continue
             }

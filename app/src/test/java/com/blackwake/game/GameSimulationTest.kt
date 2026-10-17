@@ -1572,6 +1572,64 @@ class GameSimulationTest {
         )
     }
 
+    /** Active repair at lever 0.2 in an empty sea, no pursuers and the fork already spent, so no other cue fires. */
+    private fun silentRepairStart(): Pair<RunState, List<GameEvent>> {
+        val start = quietRun().copy(
+            hull = 50f, fuel = 60f, throttle = 0.2f, entities = emptyList(), pursuers = emptyList(), forkSpawned = true
+        )
+        val started = GameSimulation.startRepair(start)
+        assertTrue(started.first.repair.active)
+        return started
+    }
+
+    @Test
+    fun repairLeverAndFuelCancelEmitCancelCue() {
+        // Spec §4 Damage Control UX: distinct start / cancel / complete sounds. Cancel is a falling 330 Hz tone, no haptic.
+        val cancelFreq = 330f
+        val (repairing, _) = silentRepairStart()
+        val leverCancel = step(repairing.copy(throttle = 0.5f))
+        assertFalse(leverCancel.run.repair.active)
+        assertTrue(leverCancel.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // LEVA ALTA" })
+        val fuelCancel = step(repairing.copy(fuel = 0f))
+        assertFalse(fuelCancel.run.repair.active)
+        assertTrue(fuelCancel.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // SENZA CARBURANTE" })
+        for ((label, frame) in listOf("lever" to leverCancel, "fuel" to fuelCancel)) {
+            assertEquals(
+                "$label cancel: exactly one cancel tone, got ${frame.events}",
+                1,
+                frame.events.count { it is GameEvent.Tone && it.freq == cancelFreq }
+            )
+            assertFalse("$label cancel: no haptic, got ${frame.events}", frame.events.any { it is GameEvent.Vibrate })
+        }
+    }
+
+    @Test
+    fun repairStartAndCompleteCuesAreDistinct() {
+        val (repairing, startEvents) = silentRepairStart()
+        val startTones = startEvents.filterIsInstance<GameEvent.Tone>()
+        assertEquals("one start tone, got $startEvents", 1, startTones.size)
+        var run = repairing
+        var completeEvents: List<GameEvent>? = null
+        var frames = 0
+        while (completeEvents == null && frames < 400) {
+            val result = step(run)
+            assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+            if (!result.run.repair.active) {
+                assertTrue(result.run.feed.any { it.text == "SCAFO RIPRISTINATO // +18" })
+                completeEvents = result.events
+            }
+            run = result.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            frames++
+        }
+        assertNotNull("repair never completed", completeEvents)
+        val completeTones = completeEvents!!.filterIsInstance<GameEvent.Tone>()
+        assertEquals("one completion tone, got $completeEvents", 1, completeTones.size)
+        assertTrue(
+            "start ${startTones[0].freq} Hz and complete ${completeTones[0].freq} Hz must differ",
+            startTones[0].freq != completeTones[0].freq
+        )
+    }
+
     /** Steps one frame per lever value with an empty sea; returns the final run and the number of burst ignitions. */
     private fun leverFrames(
         start: RunState,

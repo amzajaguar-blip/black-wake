@@ -90,6 +90,8 @@ object GameSimulation {
     private val HAPTIC_IGNITION = listOf(0L, 30L)
     /** Forced overheat haptic (timer end or fuel exhaustion): two pulses split by an 80 ms gap. */
     private val HAPTIC_OVERHEAT = listOf(0L, 30L, 80L, 30L)
+    /** Repair cancelled by lever or fuel: a low steady 330 Hz tone, below the 880 Hz start; no haptic. */
+    private val REPAIR_TONE_CANCEL = GameEvent.Tone(330f, 0.2f, 0.35f)
 
     private class TutorialStep(val at: Float, val spawns: List<Pair<EntityType, Int>>, val hint: String)
 
@@ -823,7 +825,7 @@ object GameSimulation {
                 newActive = false
                 val message = "RIPARAZIONE INTERROTTA // SENZA CARBURANTE"
                 said += message to MessageTone.WARNING
-                // No haptic
+                events += REPAIR_TONE_CANCEL // no haptic
             } else if (hullLost) {
                 // Interrupted by impact
                 newActive = false
@@ -835,7 +837,7 @@ object GameSimulation {
                 newActive = false
                 val message = "RIPARAZIONE INTERROTTA // LEVA ALTA"
                 said += message to MessageTone.WARNING
-                // No haptic
+                events += REPAIR_TONE_CANCEL // no haptic
             } else {
                 // Advance progress
                 val clampedProgress = min(REPAIR_SECONDS, newProgress + dt)
@@ -849,7 +851,7 @@ object GameSimulation {
                     newProgress = REPAIR_SECONDS
                     val message = "SCAFO RIPRISTINATO // +18"
                     said += message to MessageTone.INFO
-                    events += GameEvent.Tone(880f, 0.3f, 0.4f) // completion tone
+                    events += GameEvent.Tone(1175f, 0.3f, 0.4f) // completion tone, above the 880 Hz start
                 } else {
                     // Still repairing: increase detection
                     val detectionIncrease = REPAIR_DETECTION_PER_SECOND * dt

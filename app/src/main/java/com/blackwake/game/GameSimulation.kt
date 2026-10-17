@@ -38,6 +38,34 @@ object GameSimulation {
     private const val PING_SPEED = 80f
     private const val MESSAGE_SECONDS = 1.8f
     private const val RADIO_SECONDS = 5.5f
+    /** SPINTA: raw lever level above which a burst can fire; at or below it the latch re-arms and an active burst ends. */
+    private const val BURST_LEVER_THRESHOLD = 0.8f
+    /** SPINTA: minimum fuel needed to ignite a burst; a crossing below it is consumed. */
+    private const val BURST_MIN_FUEL = 12f
+    /** SPINTA: maximum burst length before the forced overheat. */
+    private const val BURST_DURATION_SECONDS = 2.5f
+    /** SPINTA: heat lock applied on every burst end. */
+    private const val BURST_HEAT_LOCK_SECONDS = 7f
+    /** SPINTA: dive lock applied on every burst end. */
+    private const val BURST_DIVE_LOCK_SECONDS = 2f
+    /** DC-1: effective lever clamp while the heat lock is running. */
+    private const val HEAT_LOCK_LEVER_CLAMP = 0.5f
+    /** DC-2: cap on the ordinary effective lever, also during a burst. */
+    private const val LEVER_CAP = 0.8f
+    /** SPINTA: speed multiplier (times boat speed) while a burst is active. */
+    private const val BURST_SPEED_FACTOR = 1.70f
+    /** SPINTA: one-off detection cost on the ignition frame. */
+    private const val BURST_IGNITION_DETECTION = 0.08f
+    /** SPINTA: detection cost per second while active, after the ignition frame. */
+    private const val BURST_DETECTION_PER_SECOND = 0.12f
+    /** SPINTA: fuel use per second (times boat fuel use) while active. */
+    private const val BURST_FUEL_PER_SECOND = 4.5f
+    /** SPINTA: steering input force scale while active. */
+    private const val BURST_STEERING_SCALE = 0.8f
+    /** SPINTA: guaranteed net push-back per second on non-INTERCEPT pursuers. */
+    private const val BURST_PUSH_PER_SECOND = 18f
+    /** SPINTA: track row the push-back cannot move a pursuer past. */
+    private const val BURST_PUSH_CAP_Y = 110f
     /** Burst ignition haptic: one short pulse. */
     private val HAPTIC_IGNITION = listOf(0L, 30L)
     /** Forced overheat haptic (timer end or fuel exhaustion): two pulses split by an 80 ms gap. */
@@ -276,18 +304,18 @@ object GameSimulation {
 
         // Re-arm: the latch arms only when the raw lever is low AND the heat lock has expired.
         // The raw lever is used so that a dry tank (which forces the engine throttle to 0) does not re-arm.
-        if (prev.throttle <= 0.8f && newBurst.heatLock <= 0f) {
+        if (prev.throttle <= BURST_LEVER_THRESHOLD && newBurst.heatLock <= 0f) {
             newBurst = newBurst.copy(armed = true)
         }
 
         // Consume: a crossing blocked by low fuel or by being submerged is spent; the lever must be
         // lowered and raised again. A crossing blocked only by an active repair is kept.
-        if (newBurst.armed && prev.throttle > 0.8f && newBurst.heatLock <= 0f && !newBurst.active && (prev.fuel < 12f || currentlySubmerged)) {
+        if (newBurst.armed && prev.throttle > BURST_LEVER_THRESHOLD && newBurst.heatLock <= 0f && !newBurst.active && (prev.fuel < BURST_MIN_FUEL || currentlySubmerged)) {
             newBurst = newBurst.copy(armed = false)
         }
 
         // Fire (single burst): when armed, lever high, not submerged, heat lock ready, enough fuel, and not already active
-        if (newBurst.armed && throttle > 0.8f && !currentlySubmerged && newBurst.heatLock <= 0f && prev.fuel >= 12f && !newBurst.active && !prev.repair.active) {
+        if (newBurst.armed && throttle > BURST_LEVER_THRESHOLD && !currentlySubmerged && newBurst.heatLock <= 0f && prev.fuel >= BURST_MIN_FUEL && !newBurst.active && !prev.repair.active) {
             newBurst = newBurst.copy(
                 active = true,
                 timer = 0f,
@@ -301,13 +329,13 @@ object GameSimulation {
         // Update burst timer if active
         if (newBurst.active) {
             val updatedTimer = newBurst.timer + dt
-            if (updatedTimer >= 2.5f) {
+            if (updatedTimer >= BURST_DURATION_SECONDS) {
                 // Burst ended by time
                 newBurst = newBurst.copy(
                     active = false,
                     timer = 0f,
-                    heatLock = 7f,
-                    diveLock = 2f,
+                    heatLock = BURST_HEAT_LOCK_SECONDS,
+                    diveLock = BURST_DIVE_LOCK_SECONDS,
                     armed = false
                 )
                 burstEndedThisFrame = true
@@ -321,13 +349,13 @@ object GameSimulation {
 
         // Check for burst end due to lever release or fuel exhaustion
         if (newBurst.active) {
-            val shouldEnd = throttle <= 0.8f || !hasFuel
+            val shouldEnd = throttle <= BURST_LEVER_THRESHOLD || !hasFuel
             if (shouldEnd) {
                 newBurst = newBurst.copy(
                     active = false,
                     timer = 0f,
-                    heatLock = 7f,
-                    diveLock = 2f,
+                    heatLock = BURST_HEAT_LOCK_SECONDS,
+                    diveLock = BURST_DIVE_LOCK_SECONDS,
                     armed = false
                 )
                 burstEndedThisFrame = true
@@ -356,11 +384,11 @@ object GameSimulation {
         // --- Effective lever: heat lock clamps to half lever at any lever value (DC-1); otherwise the
         // ordinary lever is capped at 0.8, also during a burst (Posky DC-2, 2026-10-16; GATE-DC2-BURST = i).
         // The raw lever still drives the burst latch, ignition, burst end and the repair cancel.
-        val lever = if (newBurst.heatLock > 0f) min(throttle, 0.5f) else min(throttle, 0.8f)
+        val lever = if (newBurst.heatLock > 0f) min(throttle, HEAT_LOCK_LEVER_CLAMP) else min(throttle, LEVER_CAP)
 
         // --- Speed: lever, vessel
         val targetSpeed = when {
-            newBurst.active -> 1.70f * boat.speed
+            newBurst.active -> BURST_SPEED_FACTOR * boat.speed
             // Repair active overrides speed to use effective throttle 0.2f
             prev.repair.active -> (0.8f + 0.2f * 0.4f) * boat.speed
             else -> (0.8f + lever * 0.4f) * boat.speed
@@ -437,17 +465,17 @@ object GameSimulation {
         if (newBurst.active) {
             if (burstStartedThisFrame) {
                 // Ignition cost: +0.08 once at ignition, no active cost in same frame
-                detection = (detection + 0.08f).coerceIn(0f, 1f)
+                detection = (detection + BURST_IGNITION_DETECTION).coerceIn(0f, 1f)
             } else {
                 // Active cost: +0.12/s (only after ignition frame)
-                detection = (detection + 0.12f * dt).coerceIn(0f, 1f)
+                detection = (detection + BURST_DETECTION_PER_SECOND * dt).coerceIn(0f, 1f)
             }
         }
 
         // --- Fuel
         var fuel: Float
         if (newBurst.active) {
-            fuel = max(0f, prev.fuel - dt * 4.5f * boat.fuelUse)
+            fuel = max(0f, prev.fuel - dt * BURST_FUEL_PER_SECOND * boat.fuelUse)
         } else {
             val boostUse = lever * lever * 6.1f * (1f - 0.12f * modules.engine)
             fuel = max(0f, prev.fuel - dt * (0.5f + boostUse) * boat.fuelUse)
@@ -463,7 +491,7 @@ object GameSimulation {
         // --- Player movement: magnetic lanes with inertia
         val drag = input.dragTargetX
         val nearestLane = round(prev.playerX).coerceIn(-1f, 1f)
-        val inputForce = if (drag != null) (drag - prev.playerX) * 15f * (if (newBurst.active) 0.8f else 1f) else 0f
+        val inputForce = if (drag != null) (drag - prev.playerX) * 15f * (if (newBurst.active) BURST_STEERING_SCALE else 1f) else 0f
         val magnet = if (drag != null) 6f else 12f
         var velocityX = prev.playerVelocityX + (inputForce + (nearestLane - prev.playerX) * magnet - prev.playerVelocityX * 8f) * dt
         if (drag != null && sign(drag - prev.playerX) != sign(velocityX)) velocityX *= 0.5f
@@ -519,8 +547,8 @@ object GameSimulation {
             }
             // Burst push-back: a guaranteed net 18/s against the pre-AI row, capped at 110. A ram in
             // INTERCEPT (wind-up or charge) is exempt: it is answered only by steering or diving.
-            if (newBurst.active && next.state != PursuerState.INTERCEPT && next.y < 110f) {
-                next = next.copy(y = min(110f, max(next.y, p.y + 18f * dt)))
+            if (newBurst.active && next.state != PursuerState.INTERCEPT && next.y < BURST_PUSH_CAP_Y) {
+                next = next.copy(y = min(BURST_PUSH_CAP_Y, max(next.y, p.y + BURST_PUSH_PER_SECOND * dt)))
             }
             pursuers += next
         }

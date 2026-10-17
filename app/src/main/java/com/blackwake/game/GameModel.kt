@@ -140,7 +140,9 @@ data class BurstState(
 data class RepairState(
     val kits: Int = 2,
     val active: Boolean = false,
-    val progress: Float = 0f
+    val progress: Float = 0f,
+    /** Hull actually restored by the current repair (capped at max hull); reported on completion. */
+    val healed: Float = 0f
 )
 
 /** Everything that belongs to a single mission. A new run always starts from a fresh instance. */

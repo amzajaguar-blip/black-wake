@@ -312,7 +312,8 @@ object GameSimulation {
         val newRepair = RepairState(
             kits = repair.kits - 1,
             active = true,
-            progress = 0f
+            progress = 0f,
+            healed = 0f
         )
         val message = "RIPARAZIONE AVVIATA // 3s"
         val updatedRun = run.copy(
@@ -819,6 +820,7 @@ object GameSimulation {
         val newKits = prev.repair.kits
         var newActive = prev.repair.active
         var newProgress = prev.repair.progress
+        var newHealed = prev.repair.healed
         if (prev.repair.active) {
             if (!hasFuelNow) {
                 // Senza carburante
@@ -843,13 +845,15 @@ object GameSimulation {
                 val clampedProgress = min(REPAIR_SECONDS, newProgress + dt)
                 val heal = (REPAIR_HULL / REPAIR_SECONDS) * (clampedProgress - newProgress)
                 // Heal the current hull (after collisions/ram)
-                hull = min(prev.maxHull, hull + heal)
+                val newHull = min(prev.maxHull, hull + heal)
+                newHealed += newHull - hull
+                hull = newHull
                 newProgress = clampedProgress
                 if (newProgress >= REPAIR_SECONDS) {
                     // Completed
                     newActive = false
                     newProgress = REPAIR_SECONDS
-                    val message = "SCAFO RIPRISTINATO // +18"
+                    val message = "SCAFO RIPRISTINATO // +${newHealed.roundToInt()}"
                     said += message to MessageTone.INFO
                     events += GameEvent.Tone(1175f, 0.3f, 0.4f) // completion tone, above the 880 Hz start
                 } else {
@@ -860,7 +864,7 @@ object GameSimulation {
             }
         }
         // Update repair state for the RunState copy
-        newRepair = RepairState(newKits, newActive, newProgress)
+        newRepair = RepairState(newKits, newActive, newProgress, newHealed)
 
         var fuelOutNotified = prev.fuelOutNotified
         if (fuel <= 0f && !fuelOutNotified) {

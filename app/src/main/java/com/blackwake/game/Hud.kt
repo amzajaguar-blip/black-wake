@@ -201,21 +201,35 @@ private fun Radar(run: RunState, modifier: Modifier) {
     }
 }
 
+/**
+ * Burst time left (2.5 s − timer), rounded up to 0.1 s and clamped to 0.1..2.5 so it never reads 0.0
+ * while the burst is active. Built from integer tenths, so the decimal separator is always a dot.
+ */
+private fun burstCountdown(timer: Float): String {
+    val tenths = ceil((2.5f - timer) * 10f).toInt().coerceIn(1, 25)
+    return "${tenths / 10}.${tenths % 10}"
+}
+
 @Composable
 private fun ThrottleLever(run: RunState, onChange: (Float) -> Unit) {
     val throttle = run.throttle
+    // Red is reserved for an active burst: a high lever alone gives no boost (Posky DC-2).
     val color = when {
+        run.burst.active -> Palette.Red
         run.fuel <= 0f -> Palette.Dim
-        throttle > 0.8f -> Palette.Red
         throttle > 0.6f -> Palette.Amber
         throttle < 0.2f -> Palette.Green
         else -> Palette.Cyan
     }
     val mode = when {
+        run.burst.active -> "SPINTA ${burstCountdown(run.burst.timer)}s"
+        run.burst.heatLock > 0f -> "${if (throttle > 0.5f) "MOTORE CALDO" else "CALDO"} ${ceil(run.burst.heatLock).toInt()}s"
         run.fuel <= 0f -> "DERIVA"
-        run.burst.active -> "SPINTA 2.5s"
-        run.burst.heatLock > 0f -> "CALDO ${(run.burst.heatLock).toInt()}s"
-        throttle > 0.8f -> "SPINTA"
+        throttle > 0.8f -> when {
+            run.dive.submerged -> "IMMERSO"
+            run.fuel < 12f -> "CARB. BASSO"
+            else -> "RIARMA"
+        }
         throttle < 0.2f -> "SILENZIO"
         else -> "CROCIERA"
     }
@@ -248,7 +262,7 @@ private fun ThrottleLever(run: RunState, onChange: (Float) -> Unit) {
                 val silentY = size.height * 0.8f
                 val boostY = size.height * 0.2f
                 drawRect(Palette.Green.copy(alpha = 0.10f), topLeft = Offset(0f, silentY), size = androidx.compose.ui.geometry.Size(size.width, size.height - silentY))
-                drawRect(Palette.Red.copy(alpha = 0.10f), size = androidx.compose.ui.geometry.Size(size.width, boostY))
+                drawRect((if (run.burst.active) Palette.Red else Palette.Amber).copy(alpha = 0.10f), size = androidx.compose.ui.geometry.Size(size.width, boostY))
                 val cx = size.width / 2f
                 drawLine(Palette.Dim, Offset(cx, 6f), Offset(cx, size.height - 6f), 3f * density)
                 val y = (1f - throttle) * size.height

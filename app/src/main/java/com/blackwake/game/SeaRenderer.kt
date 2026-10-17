@@ -208,7 +208,7 @@ class SeaEffects {
         val dt = if (lastElapsed < 0f || run.runElapsed < lastElapsed) 0f else run.runElapsed - lastElapsed
         if (run.runElapsed == lastElapsed) return
         lastElapsed = run.runElapsed
-        val emit = if (run.dive.submerged) 0 else if (run.speedFactor > 1.1f) 4 else if (abs(run.playerVelocityX) > 0.1f) 3 else 1
+        val emit = if (run.dive.submerged) 0 else if (run.burst.active) 4 else if (abs(run.playerVelocityX) > 0.1f) 3 else 1
         repeat(emit) {
             val i = sprayCursor * 5
             sprayCursor = (sprayCursor + 1) % SPRAY_PARTICLES
@@ -678,7 +678,7 @@ private fun playerHull(into: Path, u: Float, scale: Float = 1f) {
 private fun DrawScope.drawPlayer(run: RunState, boat: BoatSpec, cx: Float, cy: Float, u: Float, h: Float, fx: SeaEffects) {
     val wake = fx.path
     val submerged = run.dive.submerged
-    val boosting = run.speedFactor > 1.1f
+    val boosting = run.burst.active
 
     // Wake: a fan from the stern that bends away from the turn.
     val spread = (22f + (run.speedFactor - 0.8f) * 60f) * u

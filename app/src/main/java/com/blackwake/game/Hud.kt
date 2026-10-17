@@ -228,6 +228,8 @@ private fun ThrottleLever(run: RunState, onChange: (Float) -> Unit) {
         throttle > 0.8f -> when {
             run.dive.submerged -> "IMMERSO"
             run.fuel < 12f -> "CARB. BASSO"
+            // Still armed: ignition is pending (next step, or after the repair cancel), so no re-arm is needed.
+            run.burst.armed -> "SPINTA 2.5s"
             else -> "RIARMA"
         }
         throttle < 0.2f -> "SILENZIO"

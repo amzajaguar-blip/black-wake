@@ -295,12 +295,13 @@ private fun ActionPad(run: RunState, viewModel: GameViewModel, modifier: Modifie
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val repair = run.repair
-            val hasFuelNow = repair.kits > 0 && run.fuel >= 15f && run.throttle <= 0.3f && run.hull <= run.maxHull - 10f && !run.burst.active && run.burst.heatLock <= 0f && run.invulnerable <= 0f && !repair.active && !run.dive.submerged
+            // Same rule as GameSimulation.startRepair: enabled exactly when there is no block reason.
+            val blockReason = GameSimulation.repairBlockReason(run)
             ActionButton(
                 title = "RIPARA",
-                detail = " x${repair.kits}",
+                detail = blockReason ?: " x${repair.kits}",
                 color = Palette.Green,
-                enabled = hasFuelNow,
+                enabled = blockReason == null,
                 active = repair.active,
                 fraction = when { repair.active -> repair.progress / 3f; else -> null },
                 onClick = viewModel::startRepair
@@ -358,7 +359,8 @@ private fun ActionButton(
 
 @Composable
 private fun DiveButton(run: RunState, viewModel: GameViewModel) {
-    val diveLockActive = run.burst.active || run.burst.diveLock > 0f
+    // Mirrors the simulation's canDive: no dive during a burst, its dive lock, or a repair.
+    val diveLockActive = run.burst.active || run.burst.diveLock > 0f || run.repair.active
     if (diveLockActive) {
         Box(
             Modifier
@@ -368,8 +370,11 @@ private fun DiveButton(run: RunState, viewModel: GameViewModel) {
                 .semantics { contentDescription = "Immergi bloccato" }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // GameSimulation.BURST_DURATION_SECONDS + GameSimulation.BURST_DIVE_LOCK_SECONDS during the burst.
-                Label("BLOCCO ${GameSimulation.diveLockLabelSeconds(run.burst)}s", Palette.Text, 9.sp)
+                // Repair first: a repair cannot start during a burst or heat lock, and a burst cannot start
+                // during a repair, so the two locks never overlap; the order only keeps the branch deterministic.
+                // Burst: GameSimulation.BURST_DURATION_SECONDS + GameSimulation.BURST_DIVE_LOCK_SECONDS during the burst.
+                val lockSeconds = if (run.repair.active) GameSimulation.repairLockSeconds(run.repair) else GameSimulation.diveLockLabelSeconds(run.burst)
+                Label("BLOCCO ${lockSeconds}s", Palette.Text, 9.sp)
             }
         }
     } else {

@@ -70,6 +70,22 @@ object GameSimulation {
     private const val BURST_PUSH_PER_SECOND = 18f
     /** SPINTA: track row the push-back cannot move a pursuer past. */
     private const val BURST_PUSH_CAP_Y = 110f
+    /** RIPARA: minimum fuel needed to start a repair. */
+    internal const val REPAIR_MIN_FUEL = 15f
+    /** RIPARA: raw lever above which a repair cannot start and an active repair is cancelled. */
+    internal const val REPAIR_MAX_LEVER = 0.3f
+    /** RIPARA: missing hull needed to start a repair (blocked when hull > maxHull − this). */
+    internal const val REPAIR_MIN_MISSING_HULL = 10f
+    /** RIPARA: fuel spent on repair start. */
+    internal const val REPAIR_FUEL_COST = 12f
+    /** RIPARA: repair length. */
+    internal const val REPAIR_SECONDS = 3f
+    /** RIPARA: hull restored by a completed repair, spread evenly over [REPAIR_SECONDS]. */
+    internal const val REPAIR_HULL = 18f
+    /** RIPARA: detection cost per second while repairing. */
+    internal const val REPAIR_DETECTION_PER_SECOND = 0.06f
+    /** RIPARA: effective lever the speed uses while repairing. */
+    internal const val REPAIR_EFFECTIVE_LEVER = 0.2f
     /** Burst ignition haptic: one short pulse. */
     private val HAPTIC_IGNITION = listOf(0L, 30L)
     /** Forced overheat haptic (timer end or fuel exhaustion): two pulses split by an 80 ms gap. */
@@ -114,6 +130,26 @@ object GameSimulation {
     internal fun diveLockLabelSeconds(burst: BurstState): Int =
         if (burst.active) ceil((BURST_DURATION_SECONDS - burst.timer) + BURST_DIVE_LOCK_SECONDS).toInt()
         else ceil(burst.diveLock).toInt()
+
+    /**
+     * Why RIPARA is disabled, or null when [startRepair] would start a repair. Exactly the [startRepair]
+     * guard set; the order only picks the label shown when several reasons apply. Pursuit is not an input.
+     */
+    internal fun repairBlockReason(run: RunState): String? = when {
+        run.repair.kits < 1 -> "x0"
+        run.repair.active -> "IN CORSO"
+        run.dive.submerged -> "IMMERSO"
+        run.burst.active || run.burst.heatLock > 0f -> "MOTORE CALDO"
+        run.invulnerable > 0f -> "IMPATTO"
+        run.hull > run.maxHull - REPAIR_MIN_MISSING_HULL -> "SCAFO INTEGRO"
+        run.fuel < REPAIR_MIN_FUEL -> "CARBURANTE"
+        run.throttle > REPAIR_MAX_LEVER -> "TROPPO VELOCE"
+        else -> null
+    }
+
+    /** Whole seconds of repair left (dive stays locked while repairing); 0 when no repair is active. */
+    internal fun repairLockSeconds(repair: RepairState): Int =
+        if (repair.active) ceil(REPAIR_SECONDS - repair.progress).toInt() else 0
 
     fun newRun(chapterIndex: Int, progress: Progress): RunState {
         val chapter = CHAPTERS[chapterIndex]
@@ -262,21 +298,11 @@ object GameSimulation {
 
     fun startRepair(run: RunState): Pair<RunState, List<GameEvent>> {
         val repair = run.repair
-        val burst = run.burst
-        val dive = run.dive
-        // Guards: emerso, hull ≤ maxHull−10, fuel ≥ 15, throttle ≤ 0.3, !burst.active, burst.heatLock ≤ 0, invulnerable ≤ 0, !repair.active, kits ≥ 1
-        if (run.dive.submerged ||
-            run.hull > run.maxHull - 10f ||
-            run.fuel < 15f ||
-            run.throttle > 0.3f ||
-            burst.active ||
-            burst.heatLock > 0f ||
-            run.invulnerable > 0f ||
-            repair.active ||
-            repair.kits < 1) {
+        // Guards: shared with the RIPARA button through repairBlockReason.
+        if (repairBlockReason(run) != null) {
             return run to emptyList()
         }
-        val newFuel = (run.fuel - 12f).coerceAtLeast(0f)
+        val newFuel = (run.fuel - REPAIR_FUEL_COST).coerceAtLeast(0f)
         val newRepair = RepairState(
             kits = repair.kits - 1,
             active = true,
@@ -420,7 +446,7 @@ object GameSimulation {
         val targetSpeed = when {
             newBurst.active -> BURST_SPEED_FACTOR * boat.speed
             // Repair active overrides speed to use effective throttle 0.2f
-            prev.repair.active -> (0.8f + 0.2f * 0.4f) * boat.speed
+            prev.repair.active -> (0.8f + REPAIR_EFFECTIVE_LEVER * 0.4f) * boat.speed
             else -> (0.8f + lever * 0.4f) * boat.speed
         }
         val speedFactor = if (burstStartedThisFrame) targetSpeed else prev.speedFactor + (targetSpeed - prev.speedFactor) * min(1f, dt * 5f)
@@ -799,7 +825,7 @@ object GameSimulation {
                 val message = "RIPARAZIONE INTERROTTA // IMPATTO"
                 said += message to MessageTone.WARNING
                 events += GameEvent.Vibrate(listOf(0, 100, 50, 150, 50, 200))
-            } else if (prev.throttle > 0.3f) {
+            } else if (prev.throttle > REPAIR_MAX_LEVER) {
                 // Lever alta
                 newActive = false
                 val message = "RIPARAZIONE INTERROTTA // LEVA ALTA"
@@ -807,21 +833,21 @@ object GameSimulation {
                 // No haptic
             } else {
                 // Advance progress
-                val clampedProgress = min(3f, newProgress + dt)
-                val heal = 6f * (clampedProgress - newProgress)
+                val clampedProgress = min(REPAIR_SECONDS, newProgress + dt)
+                val heal = (REPAIR_HULL / REPAIR_SECONDS) * (clampedProgress - newProgress)
                 // Heal the current hull (after collisions/ram)
                 hull = min(prev.maxHull, hull + heal)
                 newProgress = clampedProgress
-                if (newProgress >= 3f) {
+                if (newProgress >= REPAIR_SECONDS) {
                     // Completed
                     newActive = false
-                    newProgress = 3f
+                    newProgress = REPAIR_SECONDS
                     val message = "SCAFO RIPRISTINATO // +18"
                     said += message to MessageTone.INFO
                     events += GameEvent.Tone(880f, 0.3f, 0.4f) // completion tone
                 } else {
                     // Still repairing: increase detection
-                    val detectionIncrease = 0.06f * dt
+                    val detectionIncrease = REPAIR_DETECTION_PER_SECOND * dt
                     detection = (detection + detectionIncrease).coerceIn(0f, 1f)
                 }
             }

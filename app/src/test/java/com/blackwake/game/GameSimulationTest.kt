@@ -48,6 +48,13 @@ class GameSimulationTest {
         assertTrue(run.entities.isEmpty() && run.pursuers.isEmpty())
         assertEquals(0f, run.sonar.cooldown, 0f)
         assertFalse(run.sonar.active)
+        // Burst, heat lock and repair never carry over: newRun (GameSimulation.kt:60) takes only the
+        // chapter and Progress, so every run starts from the RunState defaults. Death/extraction
+        // cancelling effects is met by the ViewModel leaving RUNNING (GameViewModel.kt:53-55); the
+        // outcome frame itself may still report burst.active = true (GameSimulation.kt:800/:806).
+        assertEquals(BurstState(), run.burst)
+        assertEquals(RepairState(), run.repair)
+        assertTrue("new run lever ${run.throttle} must start at or below 0.8", run.throttle <= 0.8f)
     }
 
     @Test
@@ -1205,7 +1212,9 @@ class GameSimulationTest {
 
     @Test
     fun spintaFrameRateInvariance30_60_120() {
-        for (frameTime in listOf(1f / 30f, 1f / 60f, 1f / 120f)) {
+        val rates = listOf(1f / 30f, 1f / 60f, 1f / 120f)
+        val finals = ArrayList<RunState>()
+        for (frameTime in rates) {
             var run = quietRun().copy(fuel = 100f).copy(throttle = 0.9f)
             var elapsed = 0f
             while (elapsed < 1.0f) {
@@ -1215,6 +1224,27 @@ class GameSimulationTest {
             }
             assertTrue(run.burst.active)
             assertEquals(1.0f, run.burst.timer, 0.02f)
+            finals += run
+        }
+        for (i in 1 until finals.size) {
+            assertEquals("burst fuel at 1 s must not depend on the frame rate (${rates[i]})", finals[0].fuel, finals[i].fuel, 0.01f)
+            assertEquals("burst signature at 1 s must not depend on the frame rate (${rates[i]})", finals[0].detection, finals[i].detection, 0.01f)
+        }
+
+        // The burst ends by its 2.5 s timer within one frame of each rate.
+        for (frameTime in rates) {
+            var run = quietRun().copy(fuel = 100f).copy(throttle = 0.9f)
+            var frames = 0
+            var endedAt = -1f
+            val maxFrames = (4f / frameTime).toInt()
+            while (endedAt < 0f && frames < maxFrames) {
+                val wasActive = run.burst.active
+                run = step(run, RunInput(), dt = frameTime).run
+                frames++
+                if (wasActive && !run.burst.active) endedAt = frames * frameTime
+            }
+            assertTrue("burst must end within 4 s at frame time $frameTime", endedAt > 0f)
+            assertEquals("burst end at frame time $frameTime", 2.5f, endedAt, frameTime + 1e-4f)
         }
     }
 
@@ -1899,6 +1929,151 @@ class GameSimulationTest {
         assertTrue(low.burst.active)
         assertEquals("burst signature must not depend on the lever above 0.8", low.detection, full.detection, 1e-5f)
         assertEquals("burst lane magnet must not depend on the lever above 0.8", low.playerX, full.playerX, 1e-4f)
+    }
+
+    /** Lever 0.9, full tank, empty sea, pursuit spawn held off; the run's burst state is [burst]. */
+    private fun burstBase(burst: BurstState): RunState = quietRun().copy(
+        fuel = 100f,
+        throttle = 0.9f,
+        pursuitCooldown = 100f,
+        burst = burst,
+        entities = emptyList(),
+        pursuers = emptyList()
+    )
+
+    /** Twin runs differing only by the burst: an active burst mid-way (timer 0.5) vs a disarmed control. */
+    private fun burstTwins(): Pair<RunState, RunState> =
+        burstBase(BurstState(active = true, timer = 0.5f, armed = false)) to burstBase(BurstState(armed = false))
+
+    @Test
+    fun burstKeepsNormalLaneMagnetWithoutDrag() {
+        val (burstStart, controlStart) = burstTwins()
+        val burst = step(burstStart.copy(playerX = 0.3f, playerVelocityX = 0f), RunInput()).run
+        val control = step(controlStart.copy(playerX = 0.3f, playerVelocityX = 0f), RunInput()).run
+        assertTrue(burst.burst.active)
+        assertFalse(control.burst.active)
+        // From rest with no drag the only lateral force is the lane magnet 12 (GameSimulation.kt:467-468).
+        val expected = (0f - 0.3f) * 12f * FRAME
+        assertEquals("burst must keep the free lane magnet", expected, burst.playerVelocityX, 1e-6f)
+        assertEquals("control lane magnet", expected, control.playerVelocityX, 1e-6f)
+    }
+
+    @Test
+    fun burstKeepsDragLaneMagnet() {
+        val (burstStart, controlStart) = burstTwins()
+        val input = RunInput(dragTargetX = 0.3f)
+        val burst = step(burstStart.copy(playerX = 0.3f, playerVelocityX = 0f), input).run
+        val control = step(controlStart.copy(playerX = 0.3f, playerVelocityX = 0f), input).run
+        assertTrue(burst.burst.active)
+        assertFalse(control.burst.active)
+        // Drag on the boat: no drag force, lane magnet 6 (GameSimulation.kt:466-468). sign(0) differs from
+        // sign(velocity), so the counter-steer halving at GameSimulation.kt:469 applies to both twins.
+        val expected = (0f - 0.3f) * 6f * FRAME * 0.5f
+        assertEquals("burst must keep the drag lane magnet", expected, burst.playerVelocityX, 1e-6f)
+        assertEquals("control drag lane magnet", expected, control.playerVelocityX, 1e-6f)
+    }
+
+    @Test
+    fun burstKeepsHidingDecay() {
+        // Option A: the hiding decay is not blocked during a burst; the burst only adds its 0.12/s.
+        val wreck = Entity(id = 1, type = EntityType.WRECK, lane = 1, x = 0f, z = 20f)
+        val (burstStart, controlStart) = burstTwins()
+        val burst = step(burstStart.copy(playerX = 0f, detection = 0.4f, entities = listOf(wreck)), RunInput()).run
+        val control = step(controlStart.copy(playerX = 0f, detection = 0.4f, entities = listOf(wreck)), RunInput()).run
+        assertTrue(burst.burst.active)
+        assertFalse(control.burst.active)
+        assertEquals(1, burst.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        assertEquals(1, control.entities.count { it.type == EntityType.WRECK && it.z > 2f })
+        assertEquals("burst while hiding costs only its active 0.12/s", 0.12f * FRAME, burst.detection - control.detection, 1e-5f)
+    }
+
+    @Test
+    fun spintaIgnitionCrossesPursuitThresholdSameFrame() {
+        val start = burstBase(BurstState(armed = true)).copy(detection = 0.66f, pursuitCooldown = 0f)
+        val burst = step(start)
+        val control = step(start.copy(burst = BurstState(armed = false)))
+        assertEquals("chapter 1 allows one active pursuer", 1, PursuerAI.maxActive(1))
+        assertTrue(burst.run.burst.active)
+        assertFalse(control.run.burst.active)
+        assertEquals("ignition +0.08 crosses 0.7 and spawns in the same frame", 1, burst.run.pursuers.size)
+        assertTrue(burst.events.any { it is GameEvent.Tone && it.freq == 400f })
+        assertTrue("control stays below 0.7 (detection ${control.run.detection})", control.run.detection < 0.7f)
+        assertEquals(0, control.run.pursuers.size)
+        assertFalse(control.events.any { it is GameEvent.Tone && it.freq == 400f })
+    }
+
+    @Test
+    fun spintaIgnitionCrossesWaveThresholdSameFrame() {
+        val wave = "CONTATTO PIENO // ONDA D'INSEGUIMENTO"
+        val start = burstBase(BurstState(armed = true)).copy(detection = 0.84f, waveCooldown = 0f, pursuitCooldown = 100f)
+        val burst = step(start).run
+        val control = step(start.copy(burst = BurstState(armed = false))).run
+        assertTrue(burst.burst.active)
+        assertFalse(control.burst.active)
+        assertTrue("ignition +0.08 crosses 0.91 and calls the wave in the same frame", burst.feed.any { it.text == wave })
+        assertTrue("control stays below 0.91 (detection ${control.detection})", control.detection < 0.91f)
+        assertFalse(control.feed.any { it.text == wave })
+    }
+
+    @Test
+    fun hazardsStillDamageDuringBurst() {
+        val mine = Entity(id = 900, type = EntityType.MINE, lane = 1, x = 0f, z = 3f)
+        val (burstStart, controlStart) = burstTwins()
+        val burst = simulate(burstStart.copy(entities = listOf(mine), spawnClock = 1_000f), 0.5f, emptySea = false)
+        val control = simulate(controlStart.copy(entities = listOf(mine), spawnClock = 1_000f), 0.5f, emptySea = false)
+        // Mine damage formula, GameSimulation.kt:658.
+        val expectedLoss = 25f - burstStart.modules.hull * 3f
+        assertTrue("burst must still be active after 0.5 s", burst.burst.active)
+        assertEquals("a mine must damage during the burst", expectedLoss, burst.maxHull - burst.hull, 0.001f)
+        assertEquals("control mine damage", expectedLoss, control.maxHull - control.hull, 0.001f)
+        assertTrue(burst.feed.any { it.text == "IMPATTO // MINA" })
+        assertTrue(control.feed.any { it.text == "IMPATTO // MINA" })
+    }
+
+    @Test
+    fun sonarDuringBurstStacksCost() {
+        val (twin, _) = burstTwins()
+        val quiet = twin.copy(detection = 0.3f)
+        val (pinged, events) = GameSimulation.launchSonar(quiet)
+        assertTrue(events.any { it is GameEvent.Tone && it.freq == 1320f })
+        assertTrue(pinged.sonar.active)
+        assertTrue(pinged.burst.active)
+        assertEquals("sonar adds 0.12 on top of the burst", 0.12f, pinged.detection - quiet.detection, 1e-4f)
+        val pingedAfter = step(pinged).run
+        val quietAfter = step(quiet).run
+        assertTrue(pingedAfter.burst.active)
+        assertTrue(quietAfter.burst.active)
+        assertTrue(pingedAfter.sonar.active)
+        assertEquals("sonar and burst costs stack after one frame", 0.12f, pingedAfter.detection - quietAfter.detection, 0.002f)
+    }
+
+    /** Racing boat (speed 1.12, fuelUse 1.05; GameData.kt:196), chapter 1, full tank, lever 0.9, quiet sea. */
+    private fun racingRun(racing: Progress, burst: BurstState): RunState =
+        GameSimulation.newRun(1, racing).copy(spawnClock = 1_000f, fuel = 100f, throttle = 0.9f, burst = burst)
+
+    @Test
+    fun spintaFuelDrainScalesWithBoatFuelUse() {
+        val racing = Progress(boat = PlayerBoatType.RACING)
+        val start = racingRun(racing, BurstState(active = true, timer = 0.5f, armed = false))
+        val after = GameSimulation.step(start, 1, racing, RunInput(), 0.5f, Random(1234)).run
+        assertTrue(after.burst.active)
+        assertEquals("burst drain 4.5/s scales with boat fuelUse", 0.5f * 4.5f * 1.05f, start.fuel - after.fuel, 1e-4f)
+    }
+
+    @Test
+    fun spintaSpeedScalesWithBoatSpeed() {
+        val racing = Progress(boat = PlayerBoatType.RACING)
+        val start = racingRun(racing, BurstState(armed = true))
+        val after = GameSimulation.step(start, 1, racing, RunInput(), FRAME, Random(1234)).run
+        assertTrue(after.burst.active)
+        assertEquals("burst speed 1.70 scales with boat speed", 1.70f * 1.12f, after.speedFactor, 1e-4f)
+    }
+
+    @Test
+    fun spintaIgnitionEmitsEngineTone() {
+        val ignition = step(burstBase(BurstState(armed = true)))
+        assertTrue(ignition.run.burst.active)
+        assertEquals("one engine tone on ignition", 1, ignition.events.count { it is GameEvent.Tone && it.freq == 200f })
     }
 
     private companion object {

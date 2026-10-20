@@ -1427,6 +1427,26 @@ class GameSimulationTest {
     }
 
     @Test
+    fun repairFatalImpactInterruptsBeforeHeal() {
+        // B15-8: a lethal mine hit on an active repair. hullLost interrupts the repair before any heal,
+        // and the death check reads that hull (clamped at 0) on the same frame.
+        val repair = RepairState(kits = 1, active = true, progress = 1f, healed = 6f)
+        val mine = Entity(id = 1, type = EntityType.MINE, lane = 1, x = 0f, z = 1f)
+        val start = quietRun().copy(hull = 5f, fuel = 60f, throttle = 0.2f, repair = repair, entities = listOf(mine))
+        val mineDamage = 25f - progress.modules.hull * 3f
+        val end = step(start)
+        assertEquals("hull = 5 − mine damage, clamped at 0, no heal", maxOf(0f, 5f - mineDamage), end.run.hull, 0f)
+        assertFalse("repair interrupted", end.run.repair.active)
+        assertEquals("no repair progress on the fatal frame", 1f, end.run.repair.progress, 0f)
+        assertEquals("nothing healed on the fatal frame", 6f, end.run.repair.healed, 0f)
+        val outcome = end.outcome
+        assertNotNull("lethal hit ends the run on the same frame", outcome)
+        assertFalse(outcome!!.won)
+        assertEquals("Una mina apre lo scafo in due.", outcome.reason)
+        assertTrue(end.run.feed.any { it.text == "RIPARAZIONE INTERROTTA // IMPATTO" })
+    }
+
+    @Test
     fun repairBlockedDuringBurstAndHeatLock() {
         val start = quietRun().copy(hull = 50f, fuel = 60f, throttle = 0.2f)
         val burstActive = start.copy(burst = BurstState(active = true))

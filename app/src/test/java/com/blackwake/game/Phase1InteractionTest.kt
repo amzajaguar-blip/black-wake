@@ -84,6 +84,23 @@ class Phase1InteractionTest {
         val start = quietRun().copy(detection = 0.1f, throttle = 0f, pursuitCooldown = 100f, pursuers = listOf(cruiser(31, 70f)))
         val (flared, _) = GameSimulation.launchFlare(start)
         assertEquals(PursuerState.SEARCH, flared.pursuers.single().state)
+        assertEquals("no-flare control is still PURSUIT at launch", PursuerState.PURSUIT, start.pursuers.single().state)
+
+        // No-flare control twin. The quiet player (lever 0, detection < 0.45) also drops the control to SEARCH
+        // on frame 1, so the stays-lost outcome below does not depend on the flare. What does depend on it after
+        // launch: the 2 s grace, the +0.18 detection, and one frame of SEARCH drift (8/s toward 110) while the
+        // control spends frame 1 in PURSUIT holding y 70.
+        val flaredFrame1 = step(flared).calmSea()
+        val controlFrame1 = step(start).calmSea()
+        val fp = flaredFrame1.pursuers.single()
+        val cp = controlFrame1.pursuers.single()
+        assertEquals(PursuerState.SEARCH, fp.state)
+        assertEquals("control drops to SEARCH by the quiet-player rule", PursuerState.SEARCH, cp.state)
+        assertEquals("flared twin keeps the grace on frame 1", 2f - FRAME, fp.flareGrace, 1e-4f)
+        assertEquals("control has no grace", 0f, cp.flareGrace, 0f)
+        assertEquals("flare cost kept on frame 1", 0.18f, flaredFrame1.detection - controlFrame1.detection, 0.001f)
+        assertEquals("flared twin is one SEARCH frame ahead", 8f * FRAME, fp.y - cp.y, 1e-4f)
+
         val hunting = setOf(PursuerState.PURSUIT, PursuerState.INTERCEPT)
         val end = simulate(flared, 3.5f) { run ->
             val p = run.pursuers.single()
@@ -148,15 +165,31 @@ class Phase1InteractionTest {
 
     @Test
     fun interactionSonarPingSteersSearchingHunter() {
-        // Twins: the hunter sweeps around lockX -1; only the pinged twin has an origin at x 0 to investigate.
-        val hunter = Pursuer(id = 61, type = EnemyBoatType.HUNTER, x = -1f, y = 100f, state = PursuerState.SEARCH, lockX = -1f)
-        val start = quietRun().copy(detection = 0.1f, throttle = 0f, playerX = 0f, pursuitCooldown = 100f, pursuers = listOf(hunter))
+        // Twins: the hunter sits at x 0 sweeping around lockX 0; stateTimer 1.6 keeps the sweep sin(2t)·0.5
+        // negative over t 1.6..2.1 s. The ping is launched at x 0.5, then the player steers to the left lane, so
+        // "investigates the ping origin" predicts a move right and "tracks the player" predicts a move left.
+        val hunter = Pursuer(id = 61, type = EnemyBoatType.HUNTER, x = 0f, y = 100f, state = PursuerState.SEARCH, stateTimer = 1.6f, lockX = 0f)
+        val start = quietRun().copy(detection = 0.1f, throttle = 0f, playerX = 0.5f, pursuitCooldown = 100f, pursuers = listOf(hunter))
         val (pinged, _) = GameSimulation.launchSonar(start)
-        assertEquals(0f, pinged.sonar.pingOriginX, 0f)
-        val pingedEnd = simulate(pinged, 0.5f).pursuers.single()
-        val controlEnd = simulate(start, 0.5f).pursuers.single()
+        assertEquals(0.5f, pinged.sonar.pingOriginX, 0f)
+        val steerAway = RunInput(dragTargetX = -1f)
+        fun steer(from: RunState): RunState {
+            var run = from
+            repeat((0.5f / FRAME).toInt()) {
+                val result = step(run, steerAway)
+                assertNull("run ended unexpectedly: ${result.outcome?.reason}", result.outcome)
+                run = result.calmSea()
+            }
+            return run
+        }
+        val pingedRun = steer(pinged)
+        val pingedEnd = pingedRun.pursuers.single()
+        val controlEnd = steer(start).pursuers.single()
         val origin = pinged.sonar.pingOriginX
+        assertTrue("player steered away to the left (x ${pingedRun.playerX})", pingedRun.playerX < hunter.x - 0.2f)
         assertTrue("hunter moves toward the ping origin (x ${pingedEnd.x})", abs(pingedEnd.x - origin) < abs(hunter.x - origin))
+        assertTrue("hunter moves right, toward the origin and away from the player (x ${pingedEnd.x})", pingedEnd.x > hunter.x + 0.05f)
+        assertTrue("unpinged control sweeps left (x ${controlEnd.x})", controlEnd.x < hunter.x)
         assertTrue(
             "ping pulls closer than the unpinged sweep (pinged ${pingedEnd.x}, control ${controlEnd.x})",
             abs(pingedEnd.x - origin) < abs(controlEnd.x - origin)

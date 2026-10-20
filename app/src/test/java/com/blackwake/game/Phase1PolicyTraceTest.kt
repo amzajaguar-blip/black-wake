@@ -4,6 +4,8 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -120,17 +122,73 @@ class Phase1PolicyTraceTest {
     @Test
     fun aPolicyTracesReport() {
         val rows = ArrayList<String>(SEEDS.size * 8 * Policy.entries.size)
+        val scenarios = ArrayList<Map<Policy, Score>>(SEEDS.size * 8)
         for (seed in SEEDS) {
             for (chapter in 0..7) {
+                val scores = HashMap<Policy, Score>()
                 for (policy in Policy.entries) {
                     val trace = scenario(seed, chapter, policy)
                     rows += row(seed, chapter, policy, trace)
+                    scores[policy] = Score(trace.wins, trace.banked, trace.damage)
                 }
+                scenarios += scores
             }
         }
         assertEquals(SEEDS.size * 8 * Policy.entries.size, rows.size)
         rows.forEach(::println)
+        for (policy in G3_POLICIES) {
+            val others = G3_POLICIES - policy
+            val k = scenarios.count { scores -> dominatesAll(scores.getValue(policy), others.map(scores::getValue)) }
+            println(verdict(policy.name, k, scenarios.size))
+        }
     }
+
+    @Test
+    fun bTracesAreReproducible() {
+        for (policy in Policy.entries) {
+            val first = row(1, 0, policy, scenario(1, 0, policy))
+            val second = row(1, 0, policy, scenario(1, 0, policy))
+            assertEquals("trace of $policy seed 1 chapter 0 is not reproducible", first, second)
+        }
+    }
+
+    @Test
+    fun cParetoDominanceFunctionSelfTest() {
+        assertTrue(dominates(Score(1, 10, 5.0), Score(1, 9, 5.0)))
+        assertFalse(dominates(Score(1, 10, 5.0), Score(1, 10, 5.0)))
+        assertFalse(dominates(Score(2, 5, 9.0), Score(1, 9, 1.0)))
+        assertFalse(dominates(Score(1, 9, 1.0), Score(2, 5, 9.0)))
+        val fixture = listOf(
+            listOf(Score(1, 10, 5.0), Score(1, 9, 5.0), Score(0, 10, 5.0)),
+            listOf(Score(2, 10, 1.0), Score(1, 10, 1.0), Score(2, 3, 4.0)),
+            listOf(Score(1, 10, 5.0), Score(1, 10, 6.0), Score(1, 2, 5.0)),
+            listOf(Score(3, 3, 3.0), Score(2, 2, 4.0), Score(3, 3, 3.5)),
+            listOf(Score(1, 10, 5.0), Score(1, 10, 5.0), Score(0, 0, 9.0))
+        )
+        val k = fixture.count { (p, q, r) -> dominatesAll(p, listOf(q, r)) }
+        assertEquals(4, k)
+        assertTrue(g3Fails(k, fixture.size))
+        assertTrue(verdict("FIXTURE", k, fixture.size).endsWith("FAIL"))
+        assertFalse(g3Fails(3, fixture.size))
+    }
+
+    /** Per-scenario G3 outcome triple: more wins and banked intel are better, less damage is better. */
+    private data class Score(val wins: Int, val banked: Int, val damage: Double)
+
+    /** Pareto dominance: [a] is no worse than [b] on every axis and strictly better on at least one. */
+    private fun dominates(a: Score, b: Score): Boolean =
+        a.wins >= b.wins && a.banked >= b.banked && a.damage <= b.damage &&
+            (a.wins > b.wins || a.banked > b.banked || a.damage < b.damage)
+
+    private fun dominatesAll(a: Score, others: List<Score>): Boolean = others.all { dominates(a, it) }
+
+    /** G3 fails when a policy dominates the others in at least 80% of the scenarios. */
+    private fun g3Fails(dominated: Int, total: Int): Boolean = dominated * 100 >= G3_THRESHOLD_PERCENT * total
+
+    private fun verdict(policy: String, dominated: Int, total: Int): String =
+        "G3 VERDICT policy=$policy dominates_both_in=$dominated/$total " +
+            "(${String.format(Locale.ROOT, "%.1f", dominated * 100.0 / total)}%) threshold=$G3_THRESHOLD_PERCENT% → " +
+            if (g3Fails(dominated, total)) "FAIL" else "PASS"
 
     private fun scenario(seed: Int, chapter: Int, policy: Policy): Trace {
         val progress = Progress()
@@ -250,6 +308,8 @@ class Phase1PolicyTraceTest {
         const val FRAMES_PER_SECOND = 60
         const val SIM_MINUTES = 10
         val SEEDS = listOf(1, 2, 3, 4, 5)
+        const val G3_THRESHOLD_PERCENT = 80
+        val G3_POLICIES = listOf(Policy.LOW_THROTTLE, Policy.AGGRESSIVE_SPINTA, Policy.BALANCED_ADAPTIVE)
 
         fun decimal(value: Double): String = String.format(Locale.ROOT, "%.3f", value)
     }

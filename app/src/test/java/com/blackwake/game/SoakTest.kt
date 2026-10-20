@@ -332,16 +332,6 @@ class SoakTest {
         }
     }
 
-    private fun probableRamTransition(before: RunState, after: RunState): Boolean =
-        before.pursuers.any { old ->
-            PursuerAI.canRam(old) && abs(old.y - GameSimulation.PLAYER_Y) < 8f &&
-                abs(old.x - after.playerX) < GameSimulation.RAM_HIT + 0.2f &&
-                after.pursuers.any { next ->
-                    next.id == old.id && next.state == PursuerState.PURSUIT &&
-                        abs(next.y - old.y) < 2f
-                }
-        }
-
     private companion object {
         const val FRAME = 1f / 60f
         const val FRAMES_PER_SECOND = 60

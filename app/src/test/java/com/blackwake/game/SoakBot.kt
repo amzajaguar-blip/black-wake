@@ -96,3 +96,13 @@ internal inline fun checkState(run: RunState, context: () -> String) {
 
 internal fun isHazard(type: EntityType): Boolean =
     type == EntityType.MINE || type == EntityType.WRECK || type == EntityType.ENEMY
+
+internal fun probableRamTransition(before: RunState, after: RunState): Boolean =
+    before.pursuers.any { old ->
+        PursuerAI.canRam(old) && abs(old.y - GameSimulation.PLAYER_Y) < 8f &&
+            abs(old.x - after.playerX) < GameSimulation.RAM_HIT + 0.2f &&
+            after.pursuers.any { next ->
+                next.id == old.id && next.state == PursuerState.PURSUIT &&
+                    abs(next.y - old.y) < 2f
+            }
+    }

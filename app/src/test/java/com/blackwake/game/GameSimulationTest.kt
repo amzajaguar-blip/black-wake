@@ -1820,6 +1820,58 @@ class GameSimulationTest {
     }
 
     @Test
+    fun spintaBurstEscapesImminentIntercept() {
+        val attackDelay = PursuerAI.spec(EnemyBoatType.PATROL).attackDelay
+        val pursuer = Pursuer(
+            id = 93, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y,
+            state = PursuerState.PURSUIT, attackTimer = attackDelay - 0.6f, lockX = 0f
+        )
+        for (frameTime in listOf(1f / 30f, 1f / 60f, 1f / 120f)) {
+            var (burst, control) = spintaTwins(pursuer)
+            val startHull = burst.hull
+            var controlIntercept = false
+            var controlHit = false
+            var burstInterceptWhileActive = false
+            var elapsed = 0f
+            while (elapsed < 1.5f) {
+                val dt = min(frameTime, 1.5f - elapsed)
+                val b = step(burst, dt = dt)
+                val c = step(control, dt = dt)
+                assertNull("burst run ended unexpectedly at frame time $frameTime: ${b.outcome?.reason}", b.outcome)
+                assertNull("control run ended unexpectedly at frame time $frameTime: ${c.outcome?.reason}", c.outcome)
+                burst = b.run.copy(entities = emptyList(), spawnClock = 1_000f)
+                control = c.run.copy(entities = emptyList(), spawnClock = 1_000f)
+                if (control.pursuers.single().state == PursuerState.INTERCEPT) controlIntercept = true
+                if (control.hull < startHull) controlHit = true
+                if (burst.burst.active && burst.pursuers.single().state == PursuerState.INTERCEPT) burstInterceptWhileActive = true
+                elapsed += dt
+            }
+            assertTrue("control must enter INTERCEPT within 1.5 s (frame time $frameTime)", controlIntercept)
+            assertTrue("control must take the ram hit within 1.5 s (frame time $frameTime)", controlHit)
+            assertTrue("burst must stay active for the whole 1.5 s (frame time $frameTime)", burst.burst.active)
+            assertFalse(
+                "burst fired 0.6 s before attackDelay must keep the pursuer out of INTERCEPT (frame time $frameTime)",
+                burstInterceptWhileActive
+            )
+            assertEquals("burst twin must not lose hull (frame time $frameTime)", startHull, burst.hull, 1e-4f)
+        }
+    }
+
+    @Test
+    fun spintaBurstTooLateStillRammed() {
+        // Guard, not fail-first: 0.2 s of push (3.6 units) keeps the pursuer inside the 6-unit INTERCEPT window.
+        val attackDelay = PursuerAI.spec(EnemyBoatType.PATROL).attackDelay
+        val pursuer = Pursuer(
+            id = 92, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y,
+            state = PursuerState.PURSUIT, attackTimer = attackDelay - 0.2f, lockX = 0f
+        )
+        val (burstBase, controlBase) = spintaTwins(pursuer)
+        val (burstHit, controlHit, _) = ramHitFrames(burstBase, controlBase)
+        assertTrue("control ram must land within 2 s", controlHit > 0)
+        assertTrue("burst fired 0.2 s before attackDelay must still be rammed", burstHit != -1)
+    }
+
+    @Test
     fun spintaPushSuppressedDuringRamWindup() {
         val ram = Pursuer(id = 95, type = EnemyBoatType.PATROL, x = 0f, y = 70f, state = PursuerState.INTERCEPT, stateTimer = 0f, lockX = 0f)
         val (burstBase, controlBase) = spintaTwins(ram)

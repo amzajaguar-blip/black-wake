@@ -122,6 +122,24 @@ class Phase1PolicyTraceTest {
     @Test
     fun aPolicyTracesReport() {
         val rows = ArrayList<String>(SEEDS.size * 8 * Policy.entries.size)
+        val scenarios = allScenarios(rows)
+        assertEquals(SEEDS.size * 8 * Policy.entries.size, rows.size)
+        rows.forEach(::println)
+        for (policy in G3_POLICIES) println(verdict(policy.name, dominatedCount(scenarios, policy), scenarios.size))
+    }
+
+    @Test
+    fun dNoPolicyDominatesAllSeeds() {
+        val scenarios = allScenarios(ArrayList())
+        assertEquals(SEEDS.size * 8, scenarios.size)
+        for (policy in G3_POLICIES) {
+            val k = dominatedCount(scenarios, policy)
+            assertFalse(verdict(policy.name, k, scenarios.size), g3Fails(k, scenarios.size))
+        }
+    }
+
+    /** Runs every (seed, chapter, policy), appending trace rows to [rows]; returns per-scenario G3 scores. */
+    private fun allScenarios(rows: MutableList<String>): List<Map<Policy, Score>> {
         val scenarios = ArrayList<Map<Policy, Score>>(SEEDS.size * 8)
         for (seed in SEEDS) {
             for (chapter in 0..7) {
@@ -134,13 +152,13 @@ class Phase1PolicyTraceTest {
                 scenarios += scores
             }
         }
-        assertEquals(SEEDS.size * 8 * Policy.entries.size, rows.size)
-        rows.forEach(::println)
-        for (policy in G3_POLICIES) {
-            val others = G3_POLICIES - policy
-            val k = scenarios.count { scores -> dominatesAll(scores.getValue(policy), others.map(scores::getValue)) }
-            println(verdict(policy.name, k, scenarios.size))
-        }
+        return scenarios
+    }
+
+    /** Number of scenarios in which [policy] dominates both other G3 policies. */
+    private fun dominatedCount(scenarios: List<Map<Policy, Score>>, policy: Policy): Int {
+        val others = G3_POLICIES - policy
+        return scenarios.count { scores -> dominatesAll(scores.getValue(policy), others.map(scores::getValue)) }
     }
 
     @Test

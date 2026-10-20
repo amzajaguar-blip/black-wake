@@ -13,7 +13,8 @@ import org.junit.Test
  */
 class Phase1PolicyTraceTest {
     /**
-     * Lever and tool rules, quoted from GATE-P (Posky approved as proposed) and GATE-P2 (Posky).
+     * Lever and tool rules, quoted from GATE-P (Posky approved as proposed),
+     * GATE-P2 (Posky) and GATE-P3 (Posky).
      *
      * GATE-P: "All new policies share the existing Bot (lanes, dives, flare on INTERCEPT); only the lever
      * and tool use differ."
@@ -44,6 +45,13 @@ class Phase1PolicyTraceTest {
          * detection < 0.6 && fuel >= 30. Ignite with the same one-frame 0.8 → 1.0 re-cross. (c) The repair
          * rule's 'no active pursuer' means no pursuer in DETECTED, PURSUIT or INTERCEPT. SEARCH,
          * SEARCH_AGAIN and LOST_TARGET are allowed."
+         *
+         * GATE-P3 (Posky): "Remove `!burst.armed` from the BALANCED_ADAPTIVE trigger. The trigger becomes:
+         * !burst.active && heatLock == 0 && fuel >= 12 && !submerged && hunted && detection < 0.6 &&
+         * fuel >= 30. Ignition, the full-burst hold and everything else stay as they are." The one-frame
+         * 0.8 → 1.0 re-cross: the frame after a 0.8 dip (the lever left in [RunState.throttle] is 0.8) the
+         * lever goes to 1.0; otherwise the trigger sets 0.8. GATE-P3 also makes the shared [Bot] treat an
+         * active repair as "cannot dive".
          */
         BALANCED_ADAPTIVE,
 
@@ -72,7 +80,9 @@ class Phase1PolicyTraceTest {
                 run.burst.active -> Action(1f, sonar, repair = false)
                 run.repair.active -> Action(0.2f, sonar, repair = false)
                 repairWanted -> Action(0.2f, sonar, repair = true)
-                burstGuards(run) && run.hunted && run.detection < 0.6f && run.fuel >= 30f -> Action(0.8f, sonar, repair = false)
+                !run.burst.active && run.burst.heatLock == 0f && run.fuel >= 12f && !run.dive.submerged &&
+                    run.hunted && run.detection < 0.6f && run.fuel >= 30f ->
+                    Action(if (run.throttle == 0.8f) 1f else 0.8f, sonar, repair = false)
                 else -> Action(if (quiet) 0.1f else 0.75f, sonar, repair = false)
             }
         }

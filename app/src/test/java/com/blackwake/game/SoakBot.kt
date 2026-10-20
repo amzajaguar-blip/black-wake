@@ -12,7 +12,8 @@ internal class Bot {
     fun choose(run: RunState): Decision {
         val currentLane = round(run.playerX).toInt().coerceIn(-1, 1) + 1
         val diveAvailable = !run.dive.lockedOut &&
-            (run.dive.oxygen >= 15f || (run.dive.submerged && run.dive.oxygen > 0f)) && run.burst.diveLock <= 0f && !run.burst.active
+            (run.dive.oxygen >= 15f || (run.dive.submerged && run.dive.oxygen > 0f)) && run.burst.diveLock <= 0f && !run.burst.active &&
+            !run.repair.active
         var speed = 25f
         for (entity in run.entities) {
             val oldZ = previousZ[entity.id] ?: continue
@@ -30,9 +31,9 @@ internal class Bot {
         for (entity in run.entities) {
             if (entity.z <= -5f || entity.z > 35f || entity.lane !in 0..2) continue
             val arrival = (entity.z + 5f) / speed
-            val canDiveByArrival = diveAvailable ||
+            val canDiveByArrival = !run.repair.active && (diveAvailable ||
                 (!run.dive.submerged && (!run.dive.lockedOut || arrival > FRAME) &&
-                    run.dive.oxygen + 15f * arrival >= 15f)
+                    run.dive.oxygen + 15f * arrival >= 15f))
             val diveFeasible = canDiveByArrival && run.dive.oxygen - 25f * arrival >= 2f
             when (entity.type) {
                 EntityType.MINE -> {

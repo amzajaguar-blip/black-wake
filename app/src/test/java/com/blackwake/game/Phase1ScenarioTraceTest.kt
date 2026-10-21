@@ -2,6 +2,7 @@ package com.blackwake.game
 
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,7 +121,8 @@ class Phase1ScenarioTraceTest {
                 trace.ignitions++
                 pendingIgnitions += now
             }
-            trace.pursuits += after.pursuers.count { it.id >= before.nextId }
+            // New pursuer = an id absent before the step (scripted pursuers carry ids above nextId).
+            trace.pursuits += after.pursuers.count { next -> before.pursuers.none { it.id == next.id } }
             val newIntercepts = after.pursuers.count { next ->
                 next.state == PursuerState.INTERCEPT &&
                     before.pursuers.none { it.id == next.id && it.state == PursuerState.INTERCEPT }
@@ -253,7 +255,7 @@ class Phase1ScenarioTraceTest {
         val tool = play(start, 1, seconds, script(true))
         val control = play(start, 1, seconds, script(false))
         printRows("S3", 1, seconds, tool, control)
-        val graceEnd = flareFrame + (2f / FRAME).toInt() - 1
+        val graceEnd = flareFrame + (2f / FRAME).roundToInt() - 1
         println(
             "S3 GRACE-END detection tool=${decimal(tool.states[graceEnd].detection.toDouble())} " +
                 "control=${decimal(control.states[graceEnd].detection.toDouble())} t=${decimal(tool.states[graceEnd].runElapsed.toDouble())}"
@@ -293,6 +295,121 @@ class Phase1ScenarioTraceTest {
         assertEquals(
             "flare cost at t ${tool.end.runElapsed} (tool ${tool.end.detection}, control ${control.end.detection})",
             0.18f, tool.end.detection - control.end.detection, 0.02f
+        )
+    }
+
+    // --- RIPARA (spec :136)
+
+    /**
+     * Gauntlet injected at t 6 s in the player lane: MINE z 30, MINE z 50, WRECK z 70 = 25 + 25 + 20 = 70 damage,
+     * spaced 20 units so each hit lands after the 0.86 s invulnerability. The brief's "≥ 45" cannot kill a
+     * hull-60 boat; 70 is the accepted value (Posky): it kills the unrepaired 60 and spares the repaired 78.
+     */
+    @Test
+    fun s5RepairGoodQuietCorridor() {
+        val seconds = 12f
+        val gauntletFrame = (6f / FRAME).roundToInt()
+        val start = scenarioStart().copy(hull = 60f, fuel = 100f, detection = 0f, throttle = 0.2f, playerX = 0f, nextId = 1000)
+        val inject = { frame: Int, run: RunState ->
+            if (frame != gauntletFrame) run else run.copy(
+                entities = run.entities + listOf(
+                    Entity(id = 801, type = EntityType.MINE, lane = 1, x = 0f, z = 30f),
+                    Entity(id = 802, type = EntityType.MINE, lane = 1, x = 0f, z = 50f),
+                    Entity(id = 803, type = EntityType.WRECK, lane = 1, x = 0f, z = 70f)
+                )
+            )
+        }
+        val tool = play(start, 1, seconds, { frame, _ -> Act(lever = 0.2f, repair = frame == 0, drag = 0f) }, inject)
+        val control = play(start, 1, seconds, { _, _ -> Act(lever = 0.2f, drag = 0f) }, inject)
+        printRows("S5", 1, seconds, tool, control)
+        assertEquals("tool repair used once (repair_uses ${tool.trace.repairUses})", 1, tool.trace.repairUses)
+        assertEquals(
+            "both twins take the full 70 gauntlet damage (tool ${tool.trace.damage}, control ${control.trace.damage})",
+            70.0, tool.trace.damage, 0.01
+        )
+        assertTrue(
+            "tool must survive (tool hull ${tool.end.hull}, outcome ${tool.outcome?.reason}; control hull ${control.end.hull})",
+            tool.outcome == null && tool.end.hull > 0f
+        )
+        assertTrue(
+            "control must die (control hull ${control.end.hull}, outcome ${control.outcome?.reason}; tool hull ${tool.end.hull})",
+            control.outcome != null && !control.outcome.won && control.end.hull <= 0f
+        )
+    }
+
+    /** A committed PATROL ram (INTERCEPT past the wind-up at y 22) reaches the hit row at about t 1.5 s. */
+    @Test
+    fun s6RepairBadUnderThreat() {
+        val seconds = 2.5f
+        val start = scenarioStart().copy(
+            hull = 60f, fuel = 100f, detection = 0.1f, throttle = 0.2f, playerX = 0f, nextId = 1000,
+            pursuers = listOf(patrol(22f, PursuerState.INTERCEPT, stateTimer = PursuerAI.WIND_UP))
+        )
+        val tool = play(start, 1, seconds, { frame, _ -> Act(lever = 0.2f, repair = frame == 0) })
+        val control = play(start, 1, seconds, { _, _ -> Act(lever = 0.2f) })
+        printRows("S6", 1, seconds, tool, control)
+        val hitFrame = tool.states.indexOfFirst { it.hull < start.hull + it.repair.healed - 1f }
+        println("S6 RAM-LANDS t=${decimal(tool.states[hitFrame].runElapsed.toDouble())} healed=${decimal(tool.end.repair.healed.toDouble())}")
+        assertEquals("kit spent (tool kits ${tool.end.repair.kits}, control ${control.end.repair.kits})", 1 to 2, tool.end.repair.kits to control.end.repair.kits)
+        assertEquals("repair fuel cost (tool ${tool.end.fuel}, control ${control.end.fuel})", 12f, control.end.fuel - tool.end.fuel, 0.01f)
+        assertTrue("healed must be partial (healed ${tool.end.repair.healed})", tool.end.repair.healed > 0f && tool.end.repair.healed < 18f)
+        assertFalse("repair must be interrupted", tool.end.repair.active)
+        assertTrue(
+            "feed must show the impact interrupt (feed ${tool.end.feed.take(5).map { it.text }})",
+            tool.end.feed.any { it.text == "RIPARAZIONE INTERROTTA // IMPATTO" }
+        )
+        assertEquals("both twins are rammed (tool ${tool.trace.ramsLanded}, control ${control.trace.ramsLanded})", 1 to 1, tool.trace.ramsLanded to control.trace.ramsLanded)
+        assertTrue(
+            "tool detection must exceed control (tool ${tool.end.detection}, control ${control.end.detection})",
+            tool.end.detection > control.end.detection
+        )
+    }
+
+    // --- SONAR (spec :164)
+
+    /** STORM chapter (index 3). The tool's only lane-change trigger is a hazard in its lane in `sonar.contactedEntities`. */
+    @Test
+    fun s7SonarGoodRevealsHiddenMine() {
+        val seconds = 8f
+        val chapter = 3
+        assertEquals(EnvironmentId.STORM, CHAPTERS[chapter].sectors.first().environment)
+        val start = scenarioStart(chapter).copy(
+            fuel = 100f, detection = 0f, throttle = 0.5f, playerX = 0f, nextId = 1000,
+            entities = listOf(Entity(id = 801, type = EntityType.MINE, lane = 1, x = 0f, z = 90f))
+        )
+        fun script(ping: Boolean): (Int, RunState) -> Act {
+            var dodge = false
+            return { frame, run ->
+                if (run.sonar.contactedEntities.any { it.type.isHazard && it.lane == 1 }) dodge = true
+                Act(lever = 0.5f, sonar = ping && frame == 0, drag = if (dodge) 1f else null)
+            }
+        }
+        val tool = play(start, chapter, seconds, script(true))
+        val control = play(start, chapter, seconds, script(false))
+        printRows("S7", chapter, seconds, tool, control)
+        assertEquals("tool pinged once (sonar_uses ${tool.trace.sonarUses})", 1, tool.trace.sonarUses)
+        assertTrue("tool changed lane (x ${tool.end.playerX}, control x ${control.end.playerX})", abs(tool.end.playerX - 1f) < 0.1f)
+        assertEquals("tool takes no hit (tool damage ${tool.trace.damage}, control ${control.trace.damage})", 0.0, tool.trace.damage, 0.0)
+        assertTrue(
+            "control stays in lane and is hit (control hull ${control.end.hull}, tool hull ${tool.end.hull})",
+            control.end.hull < tool.end.hull
+        )
+    }
+
+    @Test
+    fun s8SonarBadNearAlarm() {
+        val seconds = 1f
+        val start = scenarioStart().copy(fuel = 100f, detection = 0.62f, throttle = 0.5f, playerX = 0f, pursuitCooldown = 0f, nextId = 1000)
+        val tool = play(start, 1, seconds, { frame, _ -> Act(lever = 0.5f, sonar = frame == 0) })
+        val control = play(start, 1, seconds, { _, _ -> Act(lever = 0.5f) })
+        printRows("S8", 1, seconds, tool, control)
+        assertEquals(
+            "pursuers spawned (tool ${tool.trace.pursuits}, control ${control.trace.pursuits})",
+            1 to 0, tool.trace.pursuits to control.trace.pursuits
+        )
+        assertEquals(
+            "spawn on the step after the ping (tool detection ${tool.states[0].detection}, control ${control.states[0].detection})",
+            1, tool.states[0].pursuers.size
         )
     }
 

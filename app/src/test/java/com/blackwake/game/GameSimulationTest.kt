@@ -1819,6 +1819,11 @@ class GameSimulationTest {
         assertTrue("burst must win a net 18/s against the AI pull to CRUISE_Y (gain=$gain)", gain >= 17.5f)
     }
 
+    /**
+     * Coverage/regression test, not fail-first: it passes on the code it was written against, because the
+     * burst push (`max(next.y, p.y + 18 * dt)`) already lifts the pursuer out of the 6-unit INTERCEPT window
+     * before attackDelay when the burst fires 0.6 s ahead. It locks that escape in at 30, 60 and 120 fps.
+     */
     @Test
     fun spintaBurstEscapesImminentIntercept() {
         val attackDelay = PursuerAI.spec(EnemyBoatType.PATROL).attackDelay
@@ -1857,18 +1862,37 @@ class GameSimulationTest {
         }
     }
 
+    /** Guard: a burst fired only 0.2 s before attackDelay cannot escape the window; both twins are rammed. */
     @Test
     fun spintaBurstTooLateStillRammed() {
-        // Guard, not fail-first: 0.2 s of push (3.6 units) keeps the pursuer inside the 6-unit INTERCEPT window.
         val attackDelay = PursuerAI.spec(EnemyBoatType.PATROL).attackDelay
         val pursuer = Pursuer(
             id = 92, type = EnemyBoatType.PATROL, x = 0f, y = PursuerAI.CRUISE_Y,
             state = PursuerState.PURSUIT, attackTimer = attackDelay - 0.2f, lockX = 0f
         )
-        val (burstBase, controlBase) = spintaTwins(pursuer)
-        val (burstHit, controlHit, _) = ramHitFrames(burstBase, controlBase)
-        assertTrue("control ram must land within 2 s", controlHit > 0)
-        assertTrue("burst fired 0.2 s before attackDelay must still be rammed", burstHit != -1)
+        var (burst, control) = spintaTwins(pursuer)
+        val startHull = burst.hull
+        var burstIntercept = false
+        var burstHit = false
+        var controlHit = false
+        var elapsed = 0f
+        // 2.0 s window: the hit is expected near 1.1 s, leaving several frames of margin even at 30 fps.
+        while (elapsed < 2.0f && !(burstHit && controlHit)) {
+            val dt = min(1f / 30f, 2.0f - elapsed)
+            val b = step(burst, dt = dt)
+            val c = step(control, dt = dt)
+            assertNull("burst run ended unexpectedly: ${b.outcome?.reason}", b.outcome)
+            assertNull("control run ended unexpectedly: ${c.outcome?.reason}", c.outcome)
+            burst = b.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            control = c.run.copy(entities = emptyList(), spawnClock = 1_000f)
+            if (burst.pursuers.single().state == PursuerState.INTERCEPT) burstIntercept = true
+            if (burst.hull < startHull) burstHit = true
+            if (control.hull < startHull) controlHit = true
+            elapsed += dt
+        }
+        assertTrue("burst fired 0.2 s before attackDelay must still enter INTERCEPT", burstIntercept)
+        assertTrue("burst fired 0.2 s before attackDelay must still be rammed within 2 s", burstHit)
+        assertTrue("control must be rammed within 2 s", controlHit)
     }
 
     @Test
